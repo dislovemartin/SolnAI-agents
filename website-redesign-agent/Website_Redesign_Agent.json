@@ -1,0 +1,158 @@
+{
+  "name": "Website Redesign Agent",
+  "version": "1.0.0",
+  "description": "AI-powered assistant for automating website redesign tasks",
+  "author": "SolnAI",
+  "license": "MIT",
+  "type": "CrewAI",
+  "category": "Web Development",
+  "tags": ["website", "redesign", "SEO", "content", "design", "UX"],
+  "icon": "🌐",
+  "entry_point": "solnai_integration.py",
+  "parameters": [
+    {
+      "name": "website_url",
+      "type": "string",
+      "description": "URL of the website to redesign",
+      "required": true
+    },
+    {
+      "name": "redesign_goals",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Goals for the website redesign",
+      "required": false,
+      "default": [
+        "Improve user experience",
+        "Enhance mobile responsiveness",
+        "Optimize for search engines",
+        "Modernize design",
+        "Improve content structure",
+        "Increase conversion rate"
+      ]
+    },
+    {
+      "name": "include_seo",
+      "type": "boolean",
+      "description": "Include SEO optimization in the redesign",
+      "required": false,
+      "default": true
+    },
+    {
+      "name": "include_content_migration",
+      "type": "boolean",
+      "description": "Include content migration in the redesign",
+      "required": false,
+      "default": true
+    },
+    {
+      "name": "include_design_generation",
+      "type": "boolean",
+      "description": "Include design generation in the redesign",
+      "required": false,
+      "default": true
+    },
+    {
+      "name": "include_user_analysis",
+      "type": "boolean",
+      "description": "Include user behavior analysis in the redesign",
+      "required": false,
+      "default": true
+    },
+    {
+      "name": "target_cms",
+      "type": "string",
+      "description": "Target CMS for the redesigned website",
+      "required": false,
+      "enum": ["WordPress", "Webflow", "Custom"]
+    }
+  ],
+  "output": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the redesign was successful"
+      },
+      "result": {
+        "type": "object",
+        "description": "The redesign result"
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if the redesign failed"
+      }
+    }
+  },
+  "examples": [
+    {
+      "name": "Basic Website Redesign",
+      "description": "Redesign a simple website with default settings",
+      "input": {
+        "website_url": "https://example.com"
+      }
+    },
+    {
+      "name": "WordPress Website Redesign",
+      "description": "Redesign a WordPress website with SEO focus",
+      "input": {
+        "website_url": "https://example-wordpress.com",
+        "redesign_goals": [
+          "Improve SEO rankings",
+          "Modernize design",
+          "Improve page load speed"
+        ],
+        "include_seo": true,
+        "include_content_migration": true,
+        "include_design_generation": true,
+        "include_user_analysis": false,
+        "target_cms": "WordPress"
+      }
+    }
+  ],
+  "dependencies": {
+    "python": ">=3.9",
+    "packages": [
+      "fastapi>=0.95.0",
+      "uvicorn>=0.22.0",
+      "pydantic>=2.0.0",
+      "python-dotenv>=1.0.0",
+      "crewai>=0.28.0",
+      "requests>=2.28.0",
+      "beautifulsoup4>=4.12.0",
+      "httpx>=0.24.0"
+    ]
+  },
+  "resources": {
+    "cpu": "2",
+    "memory": "4Gi",
+    "gpu": "0"
+  },
+  "documentation": {
+    "usage": "This agent helps automate various aspects of website redesign, including site analysis, content migration, SEO optimization, design generation, and user behavior analysis.",
+    "examples": [
+      {
+        "title": "Basic Website Redesign",
+        "description": "Analyze and redesign a simple website",
+        "code": "python run_local.py --url https://example.com --output redesign_report.json"
+      },
+      {
+        "title": "WordPress Integration",
+        "description": "Analyze and redesign a WordPress website",
+        "code": "python run_local.py --url https://example-wordpress.com --output wordpress_redesign.json"
+      }
+    ],
+    "links": [
+      {
+        "title": "GitHub Repository",
+        "url": "https://github.com/solnai/website-redesign-agent"
+      },
+      {
+        "title": "CrewAI Documentation",
+        "url": "https://docs.crewai.com/"
+      }
+    ]
+  }
+}

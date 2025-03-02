@@ -1,0 +1,6 @@
+autogen-agentchat==0.4.7
+autogen-core==0.2.11
+autogen-ext==0.2.11
+anthropic>=0.18.0
+requests>=2.31.0
+python-dotenv>=1.0.0

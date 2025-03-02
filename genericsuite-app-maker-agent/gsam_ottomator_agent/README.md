@@ -2,9 +2,9 @@
 
 Author: [Carlos J. Ramirez](https://www.carlosjramirez.com)
 
-Based on the [oTtomator Python agent](https://github.com/coleam00/ottomator-agents/tree/main/~sample-python-agent~) code from: [Cole Medin](https://www.youtube.com/@ColeMedin)
+Based on the [oTtomator Python agent](https://github.com/coleam00/SolnAI-agents/tree/main/~sample-python-agent~) code from: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
-The [GSAM](../README.md) Python FastAPI agent, is a tool to help on the software development process for any Application. It allows to generate application ideas, app description, database estructures, and presentation content from a text prompt, and kick start code to be used with the [GenericSuite](https://genericsuite.carlosjramirez.com) library. It's compatible with the [OTTomator](https://ottomator.ai) [Live Agent Studio](https://studio.ottomator.ai).
+The [GSAM](../README.md) Python FastAPI agent, is a tool to help on the software development process for any Application. It allows to generate application ideas, app description, database estructures, and presentation content from a text prompt, and kick start code to be used with the [GenericSuite](https://genericsuite.carlosjramirez.com) library. It's compatible with the [OTTomator](https://ottomator.ai) [autogen_studio](https://studio.ottomator.ai).
 
 ## Overview
 

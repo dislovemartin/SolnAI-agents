@@ -20,8 +20,8 @@ An intelligent GitHub repository analysis agent built using Pydantic AI, capable
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/coleam00/ottomator-agents.git
-cd ottomator-agents/pydantic-github-agent
+git clone https://github.com/dislovemartin/SolnAI-agents.git
+cd SolnAI-agents/pydantic-github-agent
 ```
 
 2. Install dependencies (recommended to use a Python virtual environment):
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 ### Running the FastAPI Endpoint
 
-To run the agent as an API endpoint (also compatible with the oTTomator Live Agent Studio), run:
+To run the agent as an API endpoint (also compatible with the oTTomator autogen_studio), run:
 
 ```bash
 python github_agent_endpoint.py
@@ -69,8 +69,8 @@ If you prefer using Docker, you don't need to install Python or any dependencies
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/coleam00/ottomator-agents.git
-cd ottomator-agents/pydantic-github-agent
+git clone https://github.com/dislovemartin/SolnAI-agents.git
+cd SolnAI-agents/pydantic-github-agent
 ```
 
 2. Set up environment variables:
@@ -105,9 +105,9 @@ LLM_MODEL=deepseek/deepseek-chat  # Default model
 - `cli.py`: Command-line interface for interacting with the agent
 - `requirements.txt`: Project dependencies
 
-## Live Agent Studio Version
+## autogen_studio Version
 
-If you're interested in seeing how this agent is implemented in the Live Agent Studio, check out the `studio-integration-version` directory. This contains the production version of the agent that runs on the platform.
+If you're interested in seeing how this agent is implemented in the autogen_studio, check out the `studio-integration-version` directory. This contains the production version of the agent that runs on the platform.
 
 ## Error Handling
 

@@ -2,14 +2,14 @@
 
 Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
-This is a sample n8n workflow that demonstrates the minimal required components to build an agent for the Live Agent Studio. It serves as a template and reference implementation for creating new agents.
+This is a sample n8n workflow that demonstrates the minimal required components to build an agent for the autogen_studio. It serves as a template and reference implementation for creating new agents.
 
 ## Available Workflows
 
 This repository includes two n8n workflow implementations:
 
 1. **Base Sample Agent** (`Base_Sample_Agent.json`)
-   - The primary workflow that demonstrates how to manage input, output, and conversation history for the Live Agent Studio
+   - The primary workflow that demonstrates how to manage input, output, and conversation history for the autogen_studio
    - Recommended for most use cases
    - Provides complete control over conversation history management
    - Uses Supabase for message storage
@@ -17,7 +17,7 @@ This repository includes two n8n workflow implementations:
 2. **Agent Node Sample** (`Agent_Node_Sample_Agent.json`)
    - A variation that utilizes n8n's built-in "Agent" node
    - Simplified implementation where conversation history is managed by the Agent node
-   - Fully compatible with the Live Agent Studio
+   - Fully compatible with the autogen_studio
    - Ideal for simpler agent use cases
 
 ## Core Components

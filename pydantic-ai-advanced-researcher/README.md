@@ -1,6 +1,6 @@
 # Pydantic AI: Web Search Agent with Brave API
 
-An advanced web search agent using Pydantic AI and the Brave Search API, with both a command-line interface and a Streamlit web interface. The agent can be configured to use either OpenAI's GPT models or Ollama's local models. On the Live Agent Studio, this agent is using gpt-4o-mini.
+An advanced web search agent using Pydantic AI and the Brave Search API, with both a command-line interface and a Streamlit web interface. The agent can be configured to use either OpenAI's GPT models or Ollama's local models. On the autogen_studio, this agent is using gpt-4o-mini.
 
 What makes this an advanced web search agent is that it uses the Brave API to summarize a collection of articles found from the search query to create a concise yet comprehensive
 paragraph of information for the LLM to answer the user's question.
@@ -12,15 +12,15 @@ paragraph of information for the LLM to answer the user's question.
 This repository contains three versions of the agent:
 1. Command Line Interface (`web_search_agent.py`)
 2. Streamlit Web Interface (`streamlit_ui.py`)
-3. Live Agent Studio Integration (`studio-integration-version/`)
+3. autogen_studio Integration (`studio-integration-version/`)
 
-The `studio-integration-version` folder contains the exact code used to integrate this agent into the Live Agent Studio. This includes:
+The `studio-integration-version` folder contains the exact code used to integrate this agent into the autogen_studio. This includes:
 - API endpoint setup
 - Database integration
 - Authentication handling
 - Message history management
 
-If you're looking to integrate your own agent into the Live Agent Studio, this version serves as a reference implementation.
+If you're looking to integrate your own agent into the autogen_studio, this version serves as a reference implementation.
 
 ## Prerequisites
 
@@ -33,8 +33,8 @@ If you're looking to integrate your own agent into the Live Agent Studio, this v
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/coleam00/ottomator-agents.git
-cd ottomator-agents/pydantic-ai-advanced-researcher
+git clone https://github.com/dislovemartin/SolnAI-agents.git
+cd SolnAI-agents/pydantic-ai-advanced-researcher
 ```
 
 2. Install dependencies (I recommend to do this in a Python virtual environment):

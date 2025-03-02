@@ -1,5 +1,5 @@
 """
-Live Agent Studio version with mocked Hunter.io API calls since the API is pretty expensive
+autogen_studio version with mocked Hunter.io API calls since the API is pretty expensive
 and wouldn't scale for many people trying out the agent.
 
 See leadgen_agent_endpoint.py for the primary implementation that actually uses Hunter.io!

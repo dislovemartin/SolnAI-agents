@@ -1,12 +1,12 @@
-# File Processing Agent for Live Agent Studio
+# File Processing Agent for autogen_studio
 
 Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
-This is a specialized Python FastAPI agent that demonstrates how to handle file uploads in the Live Agent Studio. It shows how to process, store, and leverage file content in conversations with AI models.
+This is a specialized Python FastAPI agent that demonstrates how to handle file uploads in the autogen_studio. It shows how to process, store, and leverage file content in conversations with AI models.
 
 This agent builds upon the foundation laid out in [`~sample-python-agent~/sample_supabase_agent.py`](../~sample-python-agent~/sample_supabase_agent.py), extending it with file handling capabilities.
 
-Not all agents need file handling which is why the sample Python agent is kept simple and this one is available to help you build agents with file handling capabilities. The Live Agent Studio has file uploading built in and the files are sent in the exact format shown in this agent.
+Not all agents need file handling which is why the sample Python agent is kept simple and this one is available to help you build agents with file handling capabilities. The autogen_studio has file uploading built in and the files are sent in the exact format shown in this agent.
 
 ## Overview
 

@@ -1,6 +1,6 @@
 # Base Python Docker Image for Ottomator Agents
 
-This is the base Docker image used by Python-based Live Agent Studio agents. It provides a common foundation with all the necessary Python packages pre-installed.
+This is the base Docker image used by Python-based autogen_studio agents. It provides a common foundation with all the necessary Python packages pre-installed.
 
 ## Features
 

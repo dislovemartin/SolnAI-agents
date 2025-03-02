@@ -2,9 +2,9 @@
 
 Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
-This is a sample Python FastAPI agent that demonstrates the minimal required components to build an agent for the Live Agent Studio. It serves as a template and reference implementation for creating new Python-based agents.
+This is a sample Python FastAPI agent that demonstrates the minimal required components to build an agent for the autogen_studio. It serves as a template and reference implementation for creating new Python-based agents.
 
-This documentation is long but only because it gives you EVERYTHING you need to build a Python based agent for the Live Agent Studio! If you spend 5 minutes reading this carefully, you'll be ready to go.
+This documentation is long but only because it gives you EVERYTHING you need to build a Python based agent for the autogen_studio! If you spend 5 minutes reading this carefully, you'll be ready to go.
 
 ## Overview;;
 

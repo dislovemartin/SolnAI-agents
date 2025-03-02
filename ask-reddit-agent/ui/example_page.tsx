@@ -1,5 +1,6 @@
-import { RedditResultsGrid } from "@/components/RedditResultsGrid"
-import ToolResultsExpander from "@/components/ToolResultsExpander"
+import React from 'react';
+import { RedditResultsGrid } from '../../components/RedditResultsGrid';
+import { ToolResultsExpander } from '../../components/ToolResultsExpander';
 
 const dummyData = {
   tool_results: {
@@ -79,15 +80,14 @@ const dummyData = {
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <main className="container mx-auto p-4 md:p-8">
+    <div className="min-h-screen bg-gray-50">
+      <main className="container mx-auto py-12 px-4">
         <h1 className="text-4xl font-bold mb-8 text-center">Tool Results Dashboard</h1>
         <div className="space-y-12">
-          <RedditResultsGrid data={dummyData} />
-          <ToolResultsExpander data={dummyData} />
+          <RedditResultsGrid results={dummyData.tool_results.call_0tNO9fe3yKtsWQnM5jq406xr.result.subreddits} />
+          <ToolResultsExpander toolResults={dummyData.tool_results} />
         </div>
       </main>
     </div>
   )
 }
-

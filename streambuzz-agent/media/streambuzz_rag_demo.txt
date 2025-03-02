@@ -1,13 +1,13 @@
 Introduction
 
-The Live Agent Studio allows users to interact with community-created AI agents through a unified system. As a developer, you can create an agent that can be plugged into this platform, enabling users to easily try your agent without you having to manage authentication, handle rate limiting, or build a frontend.
+The autogen_studio allows users to interact with community-created AI agents through a unified system. As a developer, you can create an agent that can be plugged into this platform, enabling users to easily try your agent without you having to manage authentication, handle rate limiting, or build a frontend.
 The key to integration is ensuring your agent communicates using the expected input/output formats and manages conversation history as specified.
-You can even test if your agent is compatible with the Live Agent Studio and use the Studio as a frontend for your agent with our Agent 0 Playground:
+You can even test if your agent is compatible with the autogen_studio and use the Studio as a frontend for your agent with our Agent 0 Playground:
 Agent 0 Playground
 
 Agent Requirements
 Technical Requirements
-To ensure compatibility with the Live Agent Studio, your agent must:
+To ensure compatibility with the autogen_studio, your agent must:
 	•	Accept specific input parameters in a POST request.
 	•	Produce output JSON in the required format.
 	•	Manage conversation history by storing messages in a SQL database (preferably Supabase).
@@ -39,11 +39,11 @@ The agent can be built with any of the following:
 
 Sample Agents
 To help you get started, we have provided two sample agent implementations:
-	•	Sample n8n Agent - A barebones example of implementing an n8n agent compatible with the Live Agent Studio.
+	•	Sample n8n Agent - A barebones example of implementing an n8n agent compatible with the autogen_studio.
 	•	Sample Python Agent - A basic implementation example using Python with FastAPI.
-	•	For Voiceflow, there is a direct integration with the Live Agent Studio so no need to create anything custom!
+	•	For Voiceflow, there is a direct integration with the autogen_studio so no need to create anything custom!
 Input Parameters
-When the Live Agent Studio invokes your agent, it will send a POST request to your agent's webhook URL with the following JSON payload:
+When the autogen_studio invokes your agent, it will send a POST request to your agent's webhook URL with the following JSON payload:
 {
   "query": "User's input text",
   "user_id": "Unique user identifier",
@@ -69,7 +69,7 @@ Note: Since all the AI messages and data are stored directly in the database, y
 Data Output Format
 While the response JSON is simplified, your agent can still include additional data in the messages stored in the database. This data can be utilized by the frontend to enhance the user experience.
 Storing Messages in the Database
-Your agent is responsible for storing the conversation history by inserting messages into a SQL database unless you are building a Voiceflow agent. This ensures that the conversation history is maintained and can be retrieved by the Live Agent Studio. While any PostgreSQL-compatible database can be used, using Supabase directly is preferred due to its seamless integration with our platform.
+Your agent is responsible for storing the conversation history by inserting messages into a SQL database unless you are building a Voiceflow agent. This ensures that the conversation history is maintained and can be retrieved by the autogen_studio. While any PostgreSQL-compatible database can be used, using Supabase directly is preferred due to its seamless integration with our platform.
 Use this SQL to create the messages table:
 -- Enable the pgcrypto extension for UUID generation
 -- Note: If you're using Supabase, the pgcrypto extension is already enabled by default.
@@ -122,7 +122,7 @@ INSERT INTO messages (session_id, message)
 VALUES ('<session_id>', '<message_json_object>');
 Note: If you are using a different PostgreSQL database, ensure that the table structure and insertion methods are compatible.
 Hosting and Deployment
-To ensure that your agent fully integrates with the Live Agent Studio's features, we offer to host and run your agent on our infrastructure. The biggest benefit to you is you don’t have to pay for the LLM usage! On top of that, this provides:
+To ensure that your agent fully integrates with the autogen_studio's features, we offer to host and run your agent on our infrastructure. The biggest benefit to you is you don’t have to pay for the LLM usage! On top of that, this provides:
 	•	Consistency: By hosting the agent, we can ensure it adheres to all platform requirements, including security, scalability, and performance.
 	•	Feature Integration: Hosting the agent allows us to handle features like authentication, rate limiting, and logging without additional effort on your part.
 	•	Maintenance: Our team will manage the operational aspects, so you can focus on developing and improving your agent's capabilities.
@@ -130,13 +130,13 @@ How It Works
 	1	Code Submission:
 	•	Provide us with your agent's codebase or the workflow JSON if it’s an n8n/Voiceflow agent, ensuring it follows the guidelines outlined in this document.
 	2	Deployment:
-	•	Our team will deploy the agent within our infrastructure, configuring it to work seamlessly with the Live Agent Studio.
+	•	Our team will deploy the agent within our infrastructure, configuring it to work seamlessly with the autogen_studio.
 	3	Testing:
 	•	We'll perform comprehensive testing to ensure your agent functions correctly and efficiently.
 	4	Monitoring and Updates:
 	•	We'll monitor the agent's performance and work with you on any necessary updates or improvements.
 Information to Provide
-To integrate your agent into Live Agent Studio, please provide the following information:
+To integrate your agent into autogen_studio, please provide the following information:
 	•	Your Name: Your full name or your organization's name.
 	•	Your Email: Contact email address for communication.
 	•	Agent Name: A unique and descriptive name for your agent.
@@ -196,7 +196,7 @@ Frontend Component Requirements
 	•	  data: any;  // The data field from your agent's response
 	•	  handleSendMessage: (message: string, messageData?: string) => Promise<void>;
 	•	}
-	•	Styling: Use Tailwind CSS for styling to maintain consistency with the Live Agent Studio's design system.
+	•	Styling: Use Tailwind CSS for styling to maintain consistency with the autogen_studio's design system.
 	•	Interactive Elements: If your component includes buttons or other interactive elements, use the handleSendMessage callback to communicate with your agent.
 	•	message vs messageData: message is by default what is used to display the user's message in the frontend and communicate with your agent. Use messageData to override just what is sent to your agent.
 Example Implementation
@@ -207,13 +207,13 @@ Integration Notes
 	•	Error Handling: Include appropriate error states and loading states in your component.
 	•	Type Safety: Define proper TypeScript interfaces for your data structures.
 Building an Agent with Voiceflow
-Voiceflow is integrated directly with the Live Agent Studio through their Dialog API. This means you can create conversational AI agents using Voiceflow's powerful visual builder and they'll automatically be compatible with our platform.
+Voiceflow is integrated directly with the autogen_studio through their Dialog API. This means you can create conversational AI agents using Voiceflow's powerful visual builder and they'll automatically be compatible with our platform.
 Getting Started
 	•	Create your agent in Voiceflow using their visual builder
 	•	(Optional) Reference the Dialog API documentation for advanced use cases and custom actions
-	•	The Live Agent Studio will automatically handle the integration with Voiceflow's API
+	•	The autogen_studio will automatically handle the integration with Voiceflow's API
 Integration
-Our integration with Voiceflow is open source! For a detailed look, check out ourVoiceflow + Live Agent Studio integration. This shows:
+Our integration with Voiceflow is open source! For a detailed look, check out ourVoiceflow + autogen_studio integration. This shows:
 	•	How the Dialog API is used to manage conversations within the Studio
 	•	The custom frontend component for rendering Voiceflow's responses
 	•	Handling interactive elements like buttons and choices
@@ -232,7 +232,7 @@ If you choose to build your agent using n8n, follow these steps:
 	•	Insert the agent's response into the messages table. You can also insert more than one agent message, and the frontend will display the messages as they come into the database!
 	6	Prepare the Response:
 	•	Use a Set node to create the response object with { "success": true } or { "success": false }.
-	7	Respond to Live Agent Studio:
+	7	Respond to autogen_studio:
 	•	Use the Respond to Webhook node to send back the response.
 Note: You can use the AI Agent node from n8n, and as long as you change the table to messages from the default n8n_chat_history, you don’t have to worry about creating the user or agent messages in the database!
 
@@ -252,17 +252,17 @@ To build your agent using custom code:
 	•	Insert the agent's response into the messages table. You can also insert more than one agent message, and the frontend will display the messages as they come into the database!
 	7	Prepare the Response:
 	•	Create a JSON object containing { "success": true } or { "success": false }.
-	8	Respond to Live Agent Studio:
-	•	Send the JSON response back to Live Agent Studio.
+	8	Respond to autogen_studio:
+	•	Send the JSON response back to autogen_studio.
 Note: Ensure your endpoint is robust, handles exceptions, and returns appropriate HTTP status codes.
 
 Testing Your Agent
-Before submitting your agent to the Live Agent Studio, it's crucial to thoroughly test it to ensure it works as expected. The best way to do this is using our Agent 0 Playground, which lets you test your local agent using the actual Live Agent Studio interface:
+Before submitting your agent to the autogen_studio, it's crucial to thoroughly test it to ensure it works as expected. The best way to do this is using our Agent 0 Playground, which lets you test your local agent using the actual autogen_studio interface:
 Test in the Agent 0 Playground
 
-This will save you time by validating that your agent is fully compatible with the Live Agent Studio before submission. The playground provides the same interface and functionality as the main platform, making it the perfect testing environment.
+This will save you time by validating that your agent is fully compatible with the autogen_studio before submission. The playground provides the same interface and functionality as the main platform, making it the perfect testing environment.
 Local Testing:
-	•	Use tools like Postman or cURL to simulate requests from Live Agent Studio.
+	•	Use tools like Postman or cURL to simulate requests from autogen_studio.
 	•	Verify that your agent handles input parameters correctly and produces the expected output.
 	•	Ensure messages are correctly stored in the database.
 	•	Test how your agent handles invalid inputs, missing parameters, or unauthorized access.
@@ -292,8 +292,8 @@ Purpose:
 This enhances transparency and allows users to explore your work further.
 
 Frequently Asked Questions
-Will Live Agent Studio handle hosting and running my agent?
-Yes, we offer to host and run your agent on our infrastructure. This ensures full integration with Live Agent Studio’s features and offloads the operational aspects from you. Additionally, you won’t have to pay for LLM usage. Please provide your agent’s codebase, and we’ll handle the rest.
+Will autogen_studio handle hosting and running my agent?
+Yes, we offer to host and run your agent on our infrastructure. This ensures full integration with autogen_studio’s features and offloads the operational aspects from you. Additionally, you won’t have to pay for LLM usage. Please provide your agent’s codebase, and we’ll handle the rest.
 
 How should I handle the data field in the messages?
 The data field is optional and can include any additional information you want to pass to the frontend. Ensure it’s a valid JSON object and provide instructions on how it should be used.
@@ -312,11 +312,11 @@ How can I ensure my agent is added to the platform?
 Provide all the required information listed in the Information to Provide section. Our team will handle the integration process.
 
 What happens if my agent takes longer than 60 seconds to respond?
-Live Agent Studio may time out and return an error to the user. To prevent this, ensure your agent responds promptly, ideally within 60 seconds.
+autogen_studio may time out and return an error to the user. To prevent this, ensure your agent responds promptly, ideally within 60 seconds.
 Can I include additional endpoints or functionalities in my agent?
-Yes, but the primary interaction with Live Agent Studio should be through the specified webhook endpoint and data formats. Additional functionalities should not interfere with this integration.
+Yes, but the primary interaction with autogen_studio should be through the specified webhook endpoint and data formats. Additional functionalities should not interfere with this integration.
 
 Who should I contact if I have questions or need assistance?
 Please reach out to Cole Medin at colemedin@ottomator.ai for any questions or assistance during development.
-By following this guide, you can create an AI agent that integrates smoothly with the Live Agent Studio. Your agent will be able to process user queries, manage conversation history, and enhance the user experience on our platform.
+By following this guide, you can create an AI agent that integrates smoothly with the autogen_studio. Your agent will be able to process user queries, manage conversation history, and enhance the user experience on our platform.
 Last Updated: 2024-12-23

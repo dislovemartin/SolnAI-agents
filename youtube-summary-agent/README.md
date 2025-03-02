@@ -2,7 +2,7 @@
 
 Author: [Josh Stephens](https://github.com/josh-stephens/youtube-summary-agent)
 
-A Live Agent Studio agent that fetches and summarizes YouTube videos. The agent provides rich metadata including view counts, upload dates, top comments, and generates AI-powered summaries using GPT-4.
+A autogen_studio agent that fetches and summarizes YouTube videos. The agent provides rich metadata including view counts, upload dates, top comments, and generates AI-powered summaries using GPT-4.
 
 ## Features
 

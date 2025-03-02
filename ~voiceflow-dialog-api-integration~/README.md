@@ -4,14 +4,14 @@ Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
 > For detailed information about the Voiceflow Dialog API and how to best utilize it with your Voiceflow agents, refer to the [official Voiceflow Dialog API documentation](https://docs.voiceflow.com/reference/overview).
 
-This integration provides seamless connectivity between Voiceflow agents and the Live Agent Studio. The key feature of this integration is its zero-configuration approach - **once you build an agent in Voiceflow, it's immediately ready to use in the Live Agent Studio without any additional setup or customization**.
+This integration provides seamless connectivity between Voiceflow agents and the autogen_studio. The key feature of this integration is its zero-configuration approach - **once you build an agent in Voiceflow, it's immediately ready to use in the autogen_studio without any additional setup or customization**.
 
-This API endpoint demonstrates the implementation details of how Voiceflow agents are integrated with the Live Agent Studio. While you don't need to modify this code to use your Voiceflow agents, understanding how it works can be valuable for advanced use cases.
+This API endpoint demonstrates the implementation details of how Voiceflow agents are integrated with the autogen_studio. While you don't need to modify this code to use your Voiceflow agents, understanding how it works can be valuable for advanced use cases.
 
 ## Overview
 
 This integration enables:
-- Instant deployment of Voiceflow agents to Live Agent Studio
+- Instant deployment of Voiceflow agents to autogen_studio
 - Real-time conversation handling through Voiceflow's Dialog API
 - Automatic message history tracking
 - Support for rich responses (text, buttons, carousels - future enhancement)
@@ -87,7 +87,7 @@ messages (
 
 ## Frontend Integration
 
-The `VoiceflowFrontendComponent.tsx` demonstrates how Voiceflow traces from the Dialog API are integrated with the Live Agent Studio frontend. This component serves as an example of creating custom frontend components to display rich responses from your agent using the `data` field of the AI response instead of raw text output.
+The `VoiceflowFrontendComponent.tsx` demonstrates how Voiceflow traces from the Dialog API are integrated with the autogen_studio frontend. This component serves as an example of creating custom frontend components to display rich responses from your agent using the `data` field of the AI response instead of raw text output.
 
 ### Key Features
 - Handles various Voiceflow trace types (text, choice, knowledgeBase)
@@ -158,12 +158,12 @@ const renderTrace = (trace: VoiceflowTrace) => {
 1. Create and publish your agent in Voiceflow
 2. Copy your Dialog API key from Voiceflow
 3. Add the API key to your environment variables
-4. Your agent is now ready to use in the Live Agent Studio!
+4. Your agent is now ready to use in the autogen_studio!
 
 ## API Endpoints
 
 ### POST /api/sample-voiceflow-agent
-Handles all communication between Live Agent Studio and your Voiceflow agent.
+Handles all communication between autogen_studio and your Voiceflow agent.
 
 **Request:**
 ```json

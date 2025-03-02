@@ -57,7 +57,7 @@ StreamBuzz **filters the noise, highlights key messages, and automates replies**
 
 ### **Usage**
 
-1. Go to Live Agent Studio to try [StreamBuzz]()
+1. Go to autogen_studio to try [StreamBuzz]()
 2. Pick a YouTube Live Stream, and chat to get started.
 3. StreamBuzz filters and prioritizes chat messages (buzz) in the background. 
    - StreamBuzz intelligently processes multilingual chats, too.
@@ -69,7 +69,7 @@ StreamBuzz **filters the noise, highlights key messages, and automates replies**
 
 All in all, StreamBuzz is the ultimate **companion and chat moderator** for YouTube Live Streamers. Think of it as your chat butler. ☕
 
-Note, for the Live Agent Studio, the transformers package had to be removed because it made the container way too large. User message classification has
+Note, for the autogen_studio, the transformers package had to be removed because it made the container way too large. User message classification has
 been configured in a slightly different way that might not be as powerful as the original implementation but the agent still functions the same!
 
 ---
@@ -244,7 +244,7 @@ pip install -Ur requirements.txt
 
 ## **Acknowledgments**  
 
-StreamBuzz was created as part of the **oTTomator Live Agent Studio Hackathon**.  
+StreamBuzz was created as part of the **oTTomator autogen_studio Hackathon**.  
 Huge shoutout to [**Cole Medin**](https://github.com/coleam00) and the [**Ottomator AI Team**](https://studio.ottomator.ai/)  
 for hosting this incredible event and pushing the boundaries of AI-powered automation! 🎉  
 

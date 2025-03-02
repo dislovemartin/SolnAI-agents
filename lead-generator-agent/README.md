@@ -4,7 +4,7 @@ Author: [Asvin Kumar](https://www.linkedin.com/in/asvin-kumar-1107/)
 
 An intelligent lead generation agent built using Pydantic AI and Hunter.io API, capable of finding business email addresses, verifying emails, and generating leads. The agent can search domains for email addresses, verify email validity, and provide detailed statistics about email distribution within organizations.
 
-**Note**: For the Live Agent Studio (see the studio_ versions of the scripts), the Hunter.io calls have been mocked since the API does not scale for the entire community trying this agent on the Studio.
+**Note**: For the autogen_studio (see the studio_ versions of the scripts), the Hunter.io calls have been mocked since the API does not scale for the entire community trying this agent on the Studio.
 
 ## Features
 
@@ -27,8 +27,8 @@ An intelligent lead generation agent built using Pydantic AI and Hunter.io API, 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ottomator-agents.git
-cd ottomator-agents/lead-generator-agent
+git clone https://github.com/yourusername/SolnAI-agents.git
+cd SolnAI-agents/lead-generator-agent
 ```
 
 2. Install dependencies:

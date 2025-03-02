@@ -1,0 +1,103 @@
+{
+  "name": "Website Redesign Agent",
+  "version": "1.0.0",
+  "description": "AI-powered assistant for automating website redesign tasks",
+  "author": "SolnAI",
+  "license": "MIT",
+  "settings": {
+    "max_pages_to_analyze": 100,
+    "analysis_depth": "deep",
+    "rate_limit": 5,
+    "user_agent": "SolnAI Website Redesign Agent/1.0",
+    "follow_robots_txt": true,
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "agents": {
+    "analyzer": {
+      "enabled": true,
+      "tools": ["website_analyzer", "user_behavior_analyzer"],
+      "llm_model": "claude-3.7-sonnet",
+      "temperature": 0.2
+    },
+    "designer": {
+      "enabled": true,
+      "tools": ["design_generator"],
+      "llm_model": "claude-3.7-sonnet",
+      "temperature": 0.7
+    },
+    "seo": {
+      "enabled": true,
+      "tools": ["seo_optimizer"],
+      "llm_model": "claude-3.7-sonnet",
+      "temperature": 0.3
+    },
+    "content": {
+      "enabled": true,
+      "tools": [],
+      "llm_model": "claude-3.7-sonnet",
+      "temperature": 0.5
+    },
+    "testing": {
+      "enabled": true,
+      "tools": [],
+      "llm_model": "claude-3.7-sonnet",
+      "temperature": 0.2
+    }
+  },
+  "integrations": {
+    "cms": {
+      "wordpress": {
+        "enabled": true,
+        "api_endpoint": "/wp-json/wp/v2"
+      },
+      "webflow": {
+        "enabled": true,
+        "api_endpoint": "https://api.webflow.com"
+      },
+      "custom": {
+        "enabled": false,
+        "api_endpoint": ""
+      }
+    },
+    "analytics": {
+      "google_analytics": {
+        "enabled": true
+      },
+      "hotjar": {
+        "enabled": true
+      },
+      "custom": {
+        "enabled": false,
+        "api_endpoint": ""
+      }
+    },
+    "seo_tools": {
+      "semrush": {
+        "enabled": false
+      },
+      "ahrefs": {
+        "enabled": false
+      },
+      "custom": {
+        "enabled": false,
+        "api_endpoint": ""
+      }
+    }
+  },
+  "output_formats": {
+    "analysis_report": ["markdown", "json"],
+    "design_mockups": ["png", "pdf"],
+    "seo_recommendations": ["markdown", "csv"],
+    "content_plan": ["markdown"],
+    "testing_plan": ["markdown", "csv"]
+  },
+  "default_redesign_goals": [
+    "Improve user experience",
+    "Enhance mobile responsiveness",
+    "Optimize for search engines",
+    "Modernize design",
+    "Improve content structure",
+    "Increase conversion rate"
+  ]
+}

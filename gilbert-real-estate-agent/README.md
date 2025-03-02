@@ -18,7 +18,7 @@ Please read [Documentation](https://ivans-organization-61.gitbook.io/gilbert-ai-
 - Seamless Location Assistance: Utilizes Google Maps to clarify locations and nearby amenities
 - Consultation Scheduling: Books consultations with Alex by checking availability via Google Calendar
 - User-Friendly Interaction: Automates property searches, answers queries, and connects clients for further assistance
-- Built with Voiceflow: Compatible with websites, AI agent hubs like Live Agent Studio, and integration frameworks like Voiceflousion
+- Built with Voiceflow: Compatible with websites, AI agent hubs like autogen_studio, and integration frameworks like Voiceflousion
 
 ## How It Works
 

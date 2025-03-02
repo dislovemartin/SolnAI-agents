@@ -1,6 +1,8 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowBigUp, MessageSquare } from 'lucide-react'
-import Link from 'next/link'
+import React from 'react';
+import { ArrowBigUp, MessageSquare } from 'lucide-react';
+import Link from 'next/link';
+
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 
 interface RedditPost {
   title: string
@@ -59,21 +61,23 @@ function RedditPostCard({ post }: { post: RedditPost }) {
 }
 
 export function RedditResultsGrid({ data }: RedditResultsGridProps) {
-  const redditResults = Object.values(data.tool_results).find(result => result.tool_name === 'search_reddit')?.result.results || []
+  // Extract the reddit results from the tool results
+  const redditResults = Object.values(data.tool_results)
+    .filter(tool => tool.tool_name === 'search_reddit')
+    .flatMap(tool => tool.result.posts || []);
 
   if (redditResults.length === 0) {
-    return null
+    return <div>No Reddit results found</div>;
   }
 
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold mb-4">Reddit Search Results</h2>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {redditResults.map((post, index) => (
+        {redditResults.map((post: RedditPost, index: number) => (
           <RedditPostCard key={index} post={post} />
         ))}
       </div>
     </div>
-  )
+  );
 }
-

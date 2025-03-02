@@ -57,7 +57,7 @@ The agent provides recommendations based on specific criteria:
 
 ## Implementation Details
 
-This agent is built using the Live Agent Studio framework and demonstrates:
+This agent is built using the autogen_studio framework and demonstrates:
 
 1. **Webhook Integration**
    - Handles incoming requests

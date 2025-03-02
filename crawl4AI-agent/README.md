@@ -1,130 +1,182 @@
-# Pydantic AI: Documentation Crawler and RAG Agent
+# Crawl4AI Agent for SolnAI
 
-An intelligent documentation crawler and RAG (Retrieval-Augmented Generation) agent built using Pydantic AI and Supabase. The agent can crawl documentation websites, store content in a vector database, and provide intelligent answers to user questions by retrieving and analyzing relevant documentation chunks.
+## Overview
+
+Crawl4AI is a specialized agent for SolnAI that performs intelligent web crawling and data extraction. Built on AutoGen v0.4.7, this agent can autonomously navigate websites, extract structured data, and integrate the information with other SolnAI agents.
 
 ## Features
 
-- Documentation website crawling and chunking
-- Vector database storage with Supabase
-- Semantic search using OpenAI embeddings
-- RAG-based question answering
-- Support for code block preservation
-- Streamlit UI for interactive querying
-- Available as both API endpoint and web interface
+- **Intelligent Web Crawling**: Autonomously navigates websites following semantic relevance rather than just link structure
+- **Selective Data Extraction**: Identifies and extracts relevant information based on context and user requirements
+- **Content Summarization**: Generates concise summaries of crawled content using Claude 3.7 Sonnet
+- **Multi-format Support**: Handles various content types including HTML, PDF, images (via OCR), and JavaScript-rendered content
+- **Rate Limiting & Politeness**: Built-in mechanisms to respect robots.txt, rate limits, and ethical crawling practices
+- **Integration with SolnAI**: Seamlessly works with other agents in the SolnAI ecosystem
 
-## Prerequisites
+## Architecture
 
-- Python 3.11+
-- Supabase account and database
-- OpenAI API key
-- Streamlit (for web interface)
+The Crawl4AI agent consists of several components:
+
+1. **Crawler Engine**: Core component for web navigation and content retrieval
+2. **Content Processor**: Extracts and processes different content types
+3. **LLM Integration**: Uses Claude 3.7 Sonnet for content understanding and summarization
+4. **Memory Store**: Maintains context and history of crawled content
+5. **API Interface**: Exposes functionality to other SolnAI agents
 
 ## Installation
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/coleam00/ottomator-agents.git
-cd ottomator-agents/crawl4AI-agent
-```
-
-2. Install dependencies (recommended to use a Python virtual environment):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# From the SolnAI-agents directory
+cd crawl4AI-agent
 pip install -r requirements.txt
 ```
 
-3. Set up environment variables:
-   - Rename `.env.example` to `.env`
-   - Edit `.env` with your API keys and preferences:
-   ```env
-   OPENAI_API_KEY=your_openai_api_key
-   SUPABASE_URL=your_supabase_url
-   SUPABASE_SERVICE_KEY=your_supabase_service_key
-   LLM_MODEL=gpt-4o-mini  # or your preferred OpenAI model
-   ```
+## Configuration
+
+Create a `.env` file with the following variables:
+
+```
+ANTHROPIC_API_KEY=your_api_key_here
+CRAWL4AI_RATE_LIMIT=5  # requests per second
+CRAWL4AI_MAX_DEPTH=3   # maximum crawl depth
+CRAWL4AI_USER_AGENT="Crawl4AI Bot (https://solnai.com/bot)"
+```
 
 ## Usage
 
-### Database Setup
+### Basic Usage
 
-Execute the SQL commands in `site_pages.sql` to:
-1. Create the necessary tables
-2. Enable vector similarity search
-3. Set up Row Level Security policies
-
-In Supabase, do this by going to the "SQL Editor" tab and pasting in the SQL into the editor there. Then click "Run".
-
-### Crawl Documentation
-
-To crawl and store documentation in the vector database:
-
-```bash
-python crawl_pydantic_ai_docs.py
-```
-
-This will:
-1. Fetch URLs from the documentation sitemap
-2. Crawl each page and split into chunks
-3. Generate embeddings and store in Supabase
-
-### Streamlit Web Interface
-
-For an interactive web interface to query the documentation:
-
-```bash
-streamlit run streamlit_ui.py
-```
-
-The interface will be available at `http://localhost:8501`
-
-## Configuration
-
-### Database Schema
-
-The Supabase database uses the following schema:
-```sql
-CREATE TABLE site_pages (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    url TEXT,
-    chunk_number INTEGER,
-    title TEXT,
-    summary TEXT,
-    content TEXT,
-    metadata JSONB,
-    embedding VECTOR(1536)
-);
-```
-
-### Chunking Configuration
-
-You can configure chunking parameters in `crawl_pydantic_ai_docs.py`:
 ```python
-chunk_size = 5000  # Characters per chunk
+from crawl4ai import Crawl4AIAgent
+from autogen import UserProxyAgent
+
+# Initialize the agent
+crawler = Crawl4AIAgent(
+    name="web_crawler",
+    system_message="You are a helpful web crawler that finds and extracts information.",
+    llm_config={
+        "model": "claude-3-7-sonnet",
+        "temperature": 0.7
+    }
+)
+
+# Create a user proxy
+user = UserProxyAgent(
+    name="user",
+    human_input_mode="TERMINATE",
+    code_execution_config={"work_dir": "crawl_workspace"}
+)
+
+# Start a conversation
+user.initiate_chat(
+    crawler,
+    message="Crawl https://example.com and extract all product information."
+)
 ```
 
-The chunker intelligently preserves:
-- Code blocks
-- Paragraph boundaries
-- Sentence boundaries
+### Integration with SolnAI
 
-## Project Structure
+```python
+from soln_ai.agents import TeamManager
+from crawl4ai import Crawl4AIAgent
+from soln_ai.llm.claude_wrapper import ClaudeWrapper
 
-- `crawl_pydantic_ai_docs.py`: Documentation crawler and processor
-- `pydantic_ai_expert.py`: RAG agent implementation
-- `streamlit_ui.py`: Web interface
-- `site_pages.sql`: Database setup commands
-- `requirements.txt`: Project dependencies
+# Initialize Claude wrapper
+claude = ClaudeWrapper()
 
-## Live Agent Studio Version
+# Create the crawler agent
+crawler = Crawl4AIAgent(
+    name="web_crawler",
+    system_message="You are a helpful web crawler that finds and extracts information.",
+    llm_config=claude.get_llm_config()
+)
 
-If you're interested in seeing how this agent is implemented in the Live Agent Studio, check out the `studio-integration-api` directory. This contains the API endpoint for the production version of the agent that runs on the platform.
+# Add to a team
+team = TeamManager()
+team.add_agent(crawler)
+team.add_agent(research_agent)
+team.add_agent(writer_agent)
 
-## Error Handling
+# Start the team task
+team.initiate_task("Research the latest AI trends and write a report.")
+```
 
-The system includes robust error handling for:
-- Network failures during crawling
-- API rate limits
-- Database connection issues
-- Embedding generation errors
-- Invalid URLs or content
+## API Reference
+
+### Crawl4AIAgent Class
+
+```python
+class Crawl4AIAgent(ConversableAgent):
+    """
+    Agent for web crawling and data extraction.
+    """
+    
+    def __init__(self, name, system_message, llm_config, **kwargs):
+        """Initialize the Crawl4AI agent."""
+        super().__init__(name=name, system_message=system_message, llm_config=llm_config, **kwargs)
+        
+        # Register tools
+        self.register_tool(self.crawl_url)
+        self.register_tool(self.extract_data)
+        self.register_tool(self.summarize_content)
+        
+    def crawl_url(self, url, max_depth=1, follow_links=True):
+        """Crawl a URL and its linked pages up to max_depth."""
+        # Implementation details...
+        
+    def extract_data(self, html_content, extraction_pattern):
+        """Extract structured data from HTML content."""
+        # Implementation details...
+        
+    def summarize_content(self, content, max_length=500):
+        """Generate a summary of the content."""
+        # Implementation details...
+```
+
+## Advanced Features
+
+### Custom Extraction Patterns
+
+You can define custom extraction patterns to target specific information:
+
+```python
+extraction_pattern = {
+    "products": {
+        "selector": ".product-item",
+        "fields": {
+            "name": ".product-name",
+            "price": ".product-price",
+            "description": ".product-description"
+        }
+    }
+}
+
+results = crawler.extract_data(html_content, extraction_pattern)
+```
+
+### Content Filtering
+
+Filter crawled content based on relevance:
+
+```python
+crawler.set_content_filter(
+    relevance_threshold=0.7,
+    required_keywords=["AI", "machine learning"],
+    excluded_sections=[".sidebar", ".comments"]
+)
+```
+
+## Limitations
+
+- JavaScript-heavy sites may require additional configuration
+- Some websites may block automated crawling
+- Processing large volumes of content may require significant resources
+- OCR functionality for images has limited accuracy
+
+## Contributing
+
+Contributions to Crawl4AI are welcome! Please see our [contributing guidelines](../../CONTRIBUTING.md) for more information.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

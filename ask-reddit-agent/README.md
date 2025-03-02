@@ -178,7 +178,7 @@ Absolutely enormous shoutout to Cole Medin for putting on this hackathon and pro
 
 Here's his template for creating agents with python, pydantic, and supabase.
 
-[https://github.com/coleam00/ottomator-agents/blob/main/~sample-python-agent~/sample_supabase_agent.py](https://github.com/coleam00/ottomator-agents/blob/main/~sample-python-agent~/sample_supabase_agent.py)
+[https://github.com/coleam00/SolnAI-agents/blob/main/~sample-python-agent~/sample_supabase_agent.py](https://github.com/coleam00/SolnAI-agents/blob/main/~sample-python-agent~/sample_supabase_agent.py)
 
 Here is his super helpful developer guide:
 [https://studio.ottomator.ai/guide](https://studio.ottomator.ai/guide)
