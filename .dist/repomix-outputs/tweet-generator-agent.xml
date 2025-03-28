@@ -1,0 +1,2109 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.dockerignore
+.env.example
+.gitignore
+brave_api.py
+check_messages.sql
+crawler_utils.py
+Dockerfile
+main.py
+openai_api.py
+README.md
+setup_database.sql
+streamlit_app.py
+supabase_utils.py
+test_openai_generation.py
+test_twitter_post.py
+twitter_auth.py
+twitter_utils.py
+voice_input.py
+voice_utils.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".env.example">
+# OpenAI API Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Brave Search API Configuration
+BRAVE_API_KEY=your_brave_api_key_here
+
+# Twitter API Configuration (OAuth 1.0a)
+# Get these from https://developer.twitter.com/en/portal/dashboard
+TWITTER_API_KEY=your_api_key_here
+TWITTER_API_SECRET=your_api_secret_here
+TWITTER_ACCESS_TOKEN=your_access_token_here
+TWITTER_ACCESS_TOKEN_SECRET=your_access_token_secret_here
+
+# Supabase Configuration
+SUPABASE_URL=your_supabase_url_here
+SUPABASE_KEY=your_supabase_key_here
+
+API_BEARER_TOKEN=
+
+# Twitter API Setup Instructions:
+# 1. Go to https://developer.twitter.com/en/portal/dashboard
+# 2. Select your project and app (or create new ones)
+# 3. Go to 'Settings' > 'User authentication settings'
+# 4. Set app permissions to "Read and Write"
+# 5. Go to 'Keys and tokens':
+#    - Under 'Consumer Keys', copy API Key and Secret
+#    - Under 'Authentication Tokens', generate Access Token & Secret
+#      (Make sure to generate these AFTER setting Read and Write permissions)
+# 6. Fill in all Twitter credentials above
+</file>
+
+<file path=".gitignore">
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# UV
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#uv.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#pdm.lock
+#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
+#   in version control.
+#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+#.idea/
+
+# Ruff stuff:
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc
+</file>
+
+<file path="brave_api.py">
+import os
+import json
+import requests
+from fastapi import HTTPException
+from dotenv import load_dotenv
+from supabase_utils import log_message_to_supabase
+
+# Load environment variables
+load_dotenv()
+
+def fetch_articles_from_brave(query: str, session_id: str):
+    """
+    Fetch articles related to the query using the Brave API.
+
+    Args:
+        query (str): The search query.
+        session_id (str): The session ID to log interactions.
+
+    Returns:
+        list: A list of articles with titles, URLs, and descriptions.
+    """
+    brave_api_url = "https://api.search.brave.com/res/v1/web/search"
+    api_key = os.getenv("BRAVE_API_KEY")
+    
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Brave API key not found in environment variables")
+    
+    headers = {
+        "Accept": "application/json",
+        "X-Subscription-Token": api_key
+    }
+    
+    params = {
+        "q": query,
+        "count": 5,  # Limit to 5 articles
+        "text_decorations": False,  # Disable text decorations like bold
+        "safesearch": "moderate"
+    }
+
+    try:
+        print(f"Making request to Brave API with query: {query}")  # Debug log
+        print(f"Request URL: {brave_api_url}")  # Debug log
+        print(f"Request headers: {headers}")  # Debug log
+        print(f"Request params: {params}")  # Debug log
+        
+        # Log the request to Supabase
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="human",
+            content=f"Brave API request: {query}",
+            metadata={"query": query, "source": "Brave API"}
+        )
+        
+        response = requests.get(brave_api_url, headers=headers, params=params)
+        
+        print(f"Response status: {response.status_code}")  # Debug log
+        print(f"Response headers: {dict(response.headers)}")  # Debug log
+        
+        if response.status_code == 401:
+            print("Authentication error - invalid API key")  # Debug log
+            raise HTTPException(status_code=500, detail="Invalid or expired API key")
+        elif response.status_code != 200:
+            print(f"API error - status code: {response.status_code}")  # Debug log
+            raise HTTPException(status_code=500, detail=f"API error: {response.text}")
+        
+        try:
+            data = response.json()
+            print(f"Raw API Response: {data}")  # Debug log
+            
+            # Extract results from the response
+            articles = []
+            
+            # Handle the response data according to WebSearchApiResponse structure
+            if isinstance(data, dict):
+                # Check for error response
+                if "error" in data:
+                    error_msg = data["error"].get("message", "Unknown API error")
+                    print(f"API returned error: {error_msg}")  # Debug log
+                    raise HTTPException(status_code=500, detail=error_msg)
+                
+                # Get web search results from the 'web' field
+                web_results = data.get("web", {}).get("results", [])
+                
+                for result in web_results:
+                    # Clean up text by removing all HTML tags
+                    title = result.get("title", "")
+                    description = result.get("description", "")
+                    url = result.get("url", "")
+                    
+                    # Remove all HTML tags
+                    for tag in ["<strong>", "</strong>", "<b>", "</b>"]:
+                        title = title.replace(tag, "")
+                        description = description.replace(tag, "")
+                    
+                    articles.append({
+                        "title": title or "No Title",
+                        "url": url or "No URL",
+                        "description": description or "No Description"
+                    })
+            
+            print(f"Processed {len(articles)} articles")  # Debug log
+            
+            # Log the response to Supabase
+            log_message_to_supabase(
+                session_id=session_id,
+                message_type="ai",
+                content=f"Brave API response with {len(articles)} articles",
+                metadata={"articles": articles, "source": "Brave API"}
+            )
+            
+            return articles
+            
+        except json.JSONDecodeError as e:
+            print(f"Failed to decode JSON response: {e}")  # Debug log
+            print(f"Raw response content: {response.text}")  # Debug log
+            raise HTTPException(status_code=500, detail="Invalid JSON response from API")
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")  # Debug log
+        
+        # Log the error to Supabase
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=f"Error fetching articles: {str(e)}",
+            metadata={"source": "Brave API"}
+        )
+        raise HTTPException(status_code=500, detail=f"Error fetching articles: {str(e)}")
+</file>
+
+<file path="check_messages.sql">
+-- Query to check the latest messages for a specific session
+SELECT 
+    created_at,
+    message->>'type' as message_type,
+    message->>'content' as content,
+    message->'data'->>'drafts' as drafts
+FROM messages 
+WHERE session_id = 'sess-123'
+ORDER BY created_at DESC;
+</file>
+
+<file path="crawler_utils.py">
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
+from supabase_utils import log_message_to_supabase
+
+def crawl_url(url: str, session_id: str) -> str:
+    """
+    Fetch and parse content from a URL.
+    
+    Args:
+        url (str): URL to crawl
+        session_id (str): Session ID for logging
+    
+    Returns:
+        str: Extracted text content
+    """
+    try:
+        # Add user agent to avoid blocks
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # Fetch URL content
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Parse HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove script and style elements
+        for script in soup(["script", "style"]):
+            script.decompose()
+            
+        # Extract text
+        text = soup.get_text(separator='\n', strip=True)
+        
+        # Basic text cleaning
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        content = '\n'.join(lines)
+        
+        # Truncate if too long (e.g., for API limits)
+        max_length = 4000
+        if len(content) > max_length:
+            content = content[:max_length] + "..."
+            
+        # Log successful crawl
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="system",
+            content=f"Successfully crawled {url}",
+            metadata={"url": url, "content_length": len(content)}
+        )
+        
+        return content
+        
+    except Exception as e:
+        error_message = f"Error crawling {url}: {str(e)}"
+        # Log error
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=error_message,
+            metadata={"url": url}
+        )
+        return f"Error fetching content: {str(e)}"
+
+def crawl_articles(articles: list, session_id: str) -> list:
+    """
+    Crawl content from a list of articles.
+    
+    Args:
+        articles (list): List of articles with URLs
+        session_id (str): Session ID for logging
+    
+    Returns:
+        list: Articles enriched with crawled content
+    """
+    enriched_articles = []
+    
+    for article in articles:
+        url = article.get('url')
+        if url and url != "No URL":
+            content = crawl_url(url, session_id)
+            enriched_articles.append({
+                **article,
+                'content': content
+            })
+        else:
+            enriched_articles.append(article)
+    
+    return enriched_articles
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
+COPY . .
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+# Feel free to change sample_supabase_agent to sample_postgres_agent
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="main.py">
+import os
+import json
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from supabase import create_client, Client
+from dotenv import load_dotenv
+from brave_api import fetch_articles_from_brave
+from openai_api import generate_twitter_drafts
+from supabase_utils import log_message_to_supabase
+
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Fetch credentials from environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Ensure Supabase credentials are available
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Missing Supabase URL or API Key in environment variables!")
+
+# Initialize Supabase client
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    raise ValueError(f"Failed to initialize Supabase client: {e}")
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For development. In production, specify ["https://studio.ottomator.ai"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Models
+class MessageRequest(BaseModel):
+    session_id: str
+    content: str
+
+class Agent0Request(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+    files: list = []
+
+# Authentication
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials.credentials != os.getenv("API_BEARER_TOKEN"):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return credentials    
+
+# Endpoints
+@app.get("/")
+async def root():
+    return {"message": "AI Agent is running with environment variables!"}
+
+
+@app.get("/test-env")
+async def test_env():
+    return {
+        "supabase_url": SUPABASE_URL,
+        "supabase_key": "Loaded" if SUPABASE_KEY else "Not Loaded",
+        "openai_api_key": "Loaded" if os.getenv("OPENAI_API_KEY") else "Not Loaded",
+        "brave_api_key": "Loaded" if os.getenv("BRAVE_API_KEY") else "Not Loaded",
+    }
+
+@app.post("/api/tweet-gen")
+async def tweet_gen(request: Agent0Request, authenticated: bool = Depends(verify_token)):
+    """
+    Agent0 Studio compatible endpoint for tweet generation.
+    Accepts POST requests with user query and session information.
+    Generates tweet drafts and stores them in the database.
+    Returns a simple success/failure response.
+    """
+    try:
+        # Store incoming user message
+        user_message = {
+            "type": "human",
+            "content": request.query
+        }
+        supabase.table("messages").insert({
+            "session_id": request.session_id,
+            "message": json.dumps(user_message)
+        }).execute()
+
+        # Process the request and generate tweet drafts
+        articles = fetch_articles_from_brave(request.query, request.session_id)
+        drafts = generate_twitter_drafts(articles, request.session_id)
+
+        # Format drafts for display
+        formatted_drafts = []
+        for i, draft in enumerate(drafts, 1):
+            formatted_draft = f"Draft {i}:\n{draft['text']}\n---"
+            formatted_drafts.append(formatted_draft)
+
+        # Store AI response with tweet drafts
+        ai_message = {
+            "type": "ai",
+            "content": "\n\n".join(formatted_drafts),
+            "data": {
+                "drafts": drafts,
+                "request_id": request.request_id,
+                "user_id": request.user_id,
+                "metadata": {
+                    "articles_count": len(articles),
+                    "drafts_count": len(drafts)
+                }
+            }
+        }
+        supabase.table("messages").insert({
+            "session_id": request.session_id,
+            "message": json.dumps(ai_message)
+        }).execute()
+
+        return {"success": True}
+        
+    except Exception as e:
+        # Log error and store error message
+        print(f"Error in tweet_gen endpoint: {str(e)}")
+        error_message = {
+            "type": "error",
+            "content": f"Error generating tweets: {str(e)}",
+            "data": {
+                "error_type": type(e).__name__,
+                "request_id": request.request_id,
+                "user_id": request.user_id
+            }
+        }
+        supabase.table("messages").insert({
+            "session_id": request.session_id,
+            "message": json.dumps(error_message)
+        }).execute()
+        
+        return {"success": False}    
+
+"""
+Other endpoints commented out since they aren't protected right now
+
+@app.get("/test-supabase")
+async def test_supabase():
+    try:
+        # Test fetching data from Supabase (assuming the "messages" table exists)
+        response = supabase.table("messages").select("*").limit(1).execute()
+        return {"status": "Connected to Supabase", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error connecting to Supabase: {e}")
+
+
+@app.post("/store-message")
+async def store_message(request: MessageRequest):
+    Store a message in the Supabase `messages` table.
+    try:
+        message_data = {
+            "type": "human",  # Indicating this is a user message
+            "content": request.content,
+        }
+        # Insert into Supabase
+        supabase.table("messages").insert({
+            "session_id": request.session_id,
+            "message": json.dumps(message_data),
+        }).execute()
+        return {"status": "Message stored successfully!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error storing message: {e}")
+
+
+@app.get("/fetch-messages/{session_id}")
+async def fetch_messages(session_id: str):
+    Fetch all messages for a given session_id.
+    try:
+        # Query Supabase for messages with the given session_id
+        response = supabase.table("messages").select("*").eq("session_id", session_id).order("created_at").execute()
+        return {"status": "Messages fetched successfully!", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching messages: {e}")
+
+@app.get("/search-articles")
+async def search_articles(query: str = "default search"):
+    Search for articles using the Brave API.
+
+    Args:
+        query (str): The search query.
+
+    Returns:
+        dict: A list of articles related to the query.
+    try:
+        articles = fetch_articles_from_brave(query)
+        
+        # Ensure we have a list of articles
+        if not isinstance(articles, list):
+            articles = [articles] if articles else []
+            
+        # Return the response
+        if not articles:
+            return {
+                "status": "No results found",
+                "data": []
+            }
+            
+        return {
+            "status": "Articles fetched successfully!",
+            "data": articles
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Unexpected error in search_articles: {str(e)}")  # Debug log
+        raise HTTPException(status_code=500, detail=f"Failed to fetch articles: {str(e)}")
+
+@app.get("/generate-twitter-drafts")
+async def generate_twitter_drafts_endpoint(query: str):
+    Fetch articles and generate Twitter drafts based on them.
+
+    Args:
+        query (str): The search query for articles.
+
+    Returns:
+        dict: A list of three Twitter drafts.
+    try:
+        # Fetch articles with content
+        articles = fetch_articles_from_brave(query)
+
+        # Generate Twitter drafts
+        drafts = generate_twitter_drafts(articles)
+
+        return {"status": "Drafts generated successfully!", "drafts": drafts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+    
+
+@app.post("/process-request")
+async def process_request(session_id: str, user_input: str):
+    Main endpoint for processing user requests.
+    try:
+        # Log the user's input
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="human",
+            content=user_input,
+            metadata={"source": "voice_input"}
+        )
+
+        # Call Brave API and OpenAI logic
+        articles = fetch_articles_from_brave(user_input)
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="ai",
+            content=f"Fetched {len(articles)} articles",
+            metadata={"source": "Brave API", "query": user_input}
+        )
+
+        # Generate Twitter drafts using OpenAI
+        drafts = generate_twitter_drafts(articles)
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="ai",
+            content="Generated Twitter drafts",
+            metadata={"source": "OpenAI", "drafts": drafts}
+        )
+
+        return {"status": "success", "drafts": drafts}
+    except Exception as e:
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=f"Error processing request: {str(e)}",
+            metadata={"source": "process_request"}
+        )
+        raise HTTPException(status_code=500, detail=f"Error processing request: {e}")
+"""
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="openai_api.py">
+import os
+import json
+from fastapi import HTTPException
+from dotenv import load_dotenv
+from openai import OpenAI
+from supabase_utils import log_message_to_supabase
+
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI client
+openai_client = OpenAI()
+openai_api_key = os.getenv("OPENAI_API_KEY")
+
+if not openai_api_key:
+    raise ValueError("OpenAI API key not found in environment variables")
+
+# Function to generate Twitter drafts
+def generate_twitter_drafts(articles, session_id: str):
+    """
+    Generate three engaging Twitter drafts based on article content.
+
+    Args:
+        articles (list): A list of articles with titles, URLs, and descriptions.
+        session_id (str): Session ID for logging interactions.
+
+    Returns:
+        list: A list of three Twitter drafts in JSON format.
+    """
+    try:
+        # Combine article details into context
+        context = "\n\n".join([
+            f"Title: {article['title']}\nURL: {article['url']}\nDescription: {article['description']}"
+            for article in articles
+        ])
+
+        # Log the request to Supabase
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="human",
+            content="Request to generate Twitter drafts.",
+            metadata={"articles": articles}
+        )
+
+        # OpenAI prompt with JSON structure requirement
+        prompt = f"""
+        You are a social media expert. Using the following articles, generate 3 engaging and concise Twitter posts that encourage interaction and shares.
+
+        Requirements for each post:
+        - A catchy hook
+        - A key insight or thought-provoking question
+        - A call to action (e.g., "Read more", "Join the conversation", "What do you think?")
+        - Ensure the tone is conversational, engaging, and professional
+
+        Articles:
+        {context}
+
+        Return the drafts in the following JSON format:
+        {{
+            "drafts": [
+                {{
+                    "number": 1,
+                    "text": "The complete tweet text",
+                    "hook": "The hook used",
+                    "insight": "The key insight or question",
+                    "cta": "The call to action"
+                }},
+                {{
+                    "number": 2,
+                    "text": "The complete tweet text",
+                    "hook": "The hook used",
+                    "insight": "The key insight or question",
+                    "cta": "The call to action"
+                }},
+                {{
+                    "number": 3,
+                    "text": "The complete tweet text",
+                    "hook": "The hook used",
+                    "insight": "The key insight or question",
+                    "cta": "The call to action"
+                }}
+            ]
+        }}
+
+        Ensure each draft has a unique number from 1 to 3.
+        """
+
+        # Generate response using OpenAI GPT-4
+        response = openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a social media expert. Always respond with valid JSON."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # Parse JSON response
+        text = response.choices[0].message.content.strip()
+        drafts_data = json.loads(text)
+
+        # Log the response to Supabase
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="ai",
+            content="Generated Twitter drafts.",
+            metadata={"drafts": drafts_data["drafts"]}
+        )
+
+        return drafts_data["drafts"]
+    except json.JSONDecodeError as e:
+        error_message = f"Error parsing JSON response: {str(e)}"
+        # Log the error to Supabase
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=error_message
+        )
+        raise HTTPException(status_code=500, detail=error_message)
+    except Exception as e:
+        error_message = f"Error generating Twitter drafts: {str(e)}"
+        # Log the error to Supabase
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=error_message
+        )
+        raise HTTPException(status_code=500, detail=error_message)
+</file>
+
+<file path="README.md">
+# AI-Driven Tweet Generator
+
+Author: [Pavel Cherkashin](https://github.com/pcherkashin)
+
+## Overview
+
+This agent is an **AI-driven Tweet Generator** designed to streamline the process of generating engaging Twitter drafts. The application integrates **voice input**, **search results from Brave API**, **content analysis using Crawl4AI**, and **OpenAI GPT-4** to create concise, impactful tweets. Users can choose their preferred draft and optionally post it directly to Twitter.
+
+---
+
+## Features
+
+- **Voice Input with Speech Recognition**: Transcribe user voice commands into text.
+- **Text Input Option**: For users who prefer manual text entry.
+- **Article Search**: Fetch relevant articles using Brave API based on user queries.
+- **Content Crawling**: Analyze and extract textual content from article URLs.
+- **AI-Powered Draft Generation**: Use OpenAI GPT-4 to generate three engaging tweet drafts.
+- **Draft Selection**: Let users choose their preferred draft and optionally post it to Twitter.
+- **Logging with Supabase**: Save all interactions, API responses, and selected drafts in Supabase for tracking.
+
+---
+
+## Tech Stack
+
+### Backend:
+
+- **FastAPI**: RESTful API backend.
+- **Supabase**: Real-time database for logging and user interaction storage.
+
+### Frontend:
+
+- **Streamlit**: User-friendly interface for managing inputs, processing, and results.
+
+### Libraries & APIs:
+
+- **OpenAI Whisper**: For audio-to-text transcription.
+- **SpeechRecognition**: For capturing voice input via microphone.
+- **Brave API**: For web article searches.
+- **Crawl4AI**: For extracting content from article URLs.
+- **Tweepy**: For posting tweets on Twitter.
+
+---
+
+## Installation
+
+### Prerequisites
+
+- Python 3.12 or higher
+- Access to required API keys:
+  - OpenAI API Key
+  - Brave API Key
+  - Twitter API Keys
+  - Supabase credentials
+
+### Steps
+
+1. Clone the repository:
+
+```bash
+   git clone https://github.com/pcherkashin/ai-tweet-generator.git
+   cd ai-tweet-generator
+```
+
+2. Set up a virtual environment:
+
+```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+
+```bash
+   pip install -r requirements.txt
+```
+
+4. Create a `.env` file and configure API keys. Use `.env.example` as a template:
+
+```bash
+   cp .env.example .env
+```
+
+---
+
+## Usage
+
+### Running the App
+
+1. Start the FastAPI backend:
+
+```bash
+   uvicorn main:app --reload
+```
+
+2. Launch the Streamlit frontend:
+
+```bash
+   source venv/bin/activate && streamlit run streamlit_app.py
+```
+
+3. Open the Streamlit interface in your browser:
+   
+```
+   http://localhost:8501
+```
+
+### Workflow
+
+1. Select **voice** or **text** input.
+2. Enter or record your query (e.g., "Create a tweet about AI technology").
+3. Generate drafts:
+   - The app searches articles related to your query via the Brave API.
+   - Content is crawled and analyzed for relevance.
+   - Three drafts are generated using OpenAI GPT-4.
+4. Choose a draft:
+   - Select your preferred draft by entering its number (1, 2, or 3).
+5. Post to Twitter (optional).
+
+---
+
+## File Structure
+
+```
+.
+├── .env.example          # Environment variable template
+├── main.py               # FastAPI backend
+├── streamlit_app.py      # Streamlit frontend
+├── brave_api.py          # Brave API integration
+├── openai_api.py         # OpenAI GPT-4 integration
+├── crawler_utils.py      # Crawl4AI content extraction
+├── supabase_utils.py     # Supabase interaction
+├── voice_input.py        # SpeechRecognition integration
+├── voice_utils.py        # OpenAI Whisper transcription
+├── twitter_utils.py      # Twitter posting
+├── requirements.txt      # Dependencies
+```
+
+---
+
+## Environment Variables
+
+Configure these variables in the `.env` file:
+
+```plaintext
+
+# OpenAI API Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Brave Search API Configuration
+BRAVE_API_KEY=your_brave_api_key_here
+
+# Twitter API Configuration
+TWITTER_API_KEY=your_twitter_api_key
+TWITTER_API_SECRET=your_twitter_api_secret
+TWITTER_ACCESS_TOKEN=your_twitter_access_token
+TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
+
+# Supabase Configuration
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+```
+
+---
+
+## Agent0 Studio Integration
+
+### API Endpoint
+
+The application provides an Agent0 Studio compatible endpoint at `/api/tweet-gen` that accepts POST requests with the following structure:
+
+```json
+{
+  "query": "User's input text",
+  "user_id": "Unique user identifier",
+  "request_id": "Unique request identifier",
+  "session_id": "Conversation session identifier",
+  "files": []
+}
+```
+
+The endpoint returns a simple success/failure response:
+```json
+{
+  "success": true
+}
+```
+
+All conversation history and generated content is stored in the Supabase messages table.
+
+### Database Setup
+
+1. Create the required database table and enable realtime updates by running the SQL commands in `setup_database.sql`:
+   ```sql
+   -- Enable pgcrypto for UUID generation
+   CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+   -- Create messages table
+   CREATE TABLE messages (
+       id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       session_id TEXT NOT NULL,
+       message JSONB NOT NULL
+   );
+
+   -- Create indexes
+   CREATE INDEX idx_messages_session_id ON messages(session_id);
+   CREATE INDEX idx_messages_created_at ON messages(created_at);
+
+   -- Enable realtime updates
+   alter publication supabase_realtime add table messages;
+   ```
+
+2. The messages table stores all interactions with the following structure:
+   - For user messages:
+     ```json
+     {
+       "type": "human",
+       "content": "User's input text"
+     }
+     ```
+   - For agent responses:
+     ```json
+     {
+       "type": "ai",
+       "content": "Agent's response text",
+       "data": {
+         "drafts": [...],
+         "articles": [...]
+       }
+     }
+     ```
+
+## Key Components
+
+### 1. **Brave API**
+
+Fetches up to 5 articles based on the user query. Results include:
+
+- Article titles
+- URLs
+- Summaries
+
+### 2. **Crawl4AI**
+
+Crawls the URLs returned by the Brave API to extract and clean the main content.
+
+### 3. **OpenAI GPT-4**
+
+Generates three Twitter drafts based on the content crawled. Each draft contains:
+
+- Catchy hook
+- Insight or question
+- Call-to-action (CTA)
+
+### 4. **Supabase Logging**
+
+Logs all user requests, responses, and interactions into the `messages` table for analysis.
+
+### 5. **Streamlit Frontend**
+
+Provides a simple interface for:
+
+- Managing input (voice or text)
+- Displaying drafts
+- Selecting and posting tweets
+
+---
+
+## Testing
+
+- **Unit Testing**: Use test scripts like `test_openai_generation.py` to validate OpenAI integrations.
+- **Twitter Integration**: Test posting functionality with `test_twitter_post.py`.
+
+---
+
+## Future Enhancements
+
+- Add more personalization to drafts using user profile data.
+- Extend to other social media platforms like LinkedIn and Instagram.
+- Improve UI for better accessibility and aesthetics.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="setup_database.sql">
+-- Enable the pgcrypto extension for UUID generation
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Create messages table
+CREATE TABLE IF NOT EXISTS messages (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    session_id TEXT NOT NULL,
+    message JSONB NOT NULL
+);
+
+-- Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+
+-- Enable realtime updates for the messages table
+alter publication supabase_realtime add table messages;
+</file>
+
+<file path="streamlit_app.py">
+import streamlit as st
+import uuid
+import os
+from voice_utils import transcribe_audio_file
+from brave_api import fetch_articles_from_brave
+from crawler_utils import crawl_articles
+from openai_api import generate_twitter_drafts
+from supabase_utils import log_message_to_supabase
+
+# Twitter import
+try:
+    from twitter_utils import post_tweet
+    TWITTER_ENABLED = True
+except ImportError as e:
+    st.error(f"⚠️ Error importing Twitter module: {str(e)}")
+    TWITTER_ENABLED = False
+
+# Initialize session state
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+if 'transcribed_text' not in st.session_state:
+    st.session_state.transcribed_text = None
+if 'articles' not in st.session_state:
+    st.session_state.articles = None
+if 'drafts' not in st.session_state:
+    st.session_state.drafts = None
+if 'selected_draft' not in st.session_state:
+    st.session_state.selected_draft = None
+if 'processing_complete' not in st.session_state:
+    st.session_state.processing_complete = False
+if 'user_input' not in st.session_state:
+    st.session_state.user_input = ""
+
+def reset_state():
+    """Reset all state and refresh the page"""
+    # Generate new session ID
+    new_session_id = str(uuid.uuid4())
+    # Clear all session state
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    # Set new session ID
+    st.session_state.session_id = new_session_id
+    # Initialize other state variables
+    st.session_state.transcribed_text = None
+    st.session_state.articles = None
+    st.session_state.drafts = None
+    st.session_state.selected_draft = None
+    st.session_state.processing_complete = False
+    st.session_state.user_input = ""
+    
+    # Clear cache and reload the page
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.rerun()
+
+# Streamlit App Title
+st.title("AI-Driven Tweet Generator")
+
+# Input Type Selection
+input_type = st.radio("Choose input type:", ["Voice", "Text"])
+
+# Voice Input Section
+if input_type == "Voice":
+    st.info("📝 Upload an audio file for transcription")
+    audio_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3', 'm4a'])
+    
+    if audio_file:
+        try:
+            with st.spinner("🎙️ Transcribing audio..."):
+                transcribed_text = transcribe_audio_file(audio_file, st.session_state.session_id)
+                if transcribed_text:
+                    st.success(f"✅ Transcribed Text: {transcribed_text}")
+                    st.session_state.transcribed_text = transcribed_text
+        except Exception as e:
+            st.error(f"❌ Error transcribing audio: {str(e)}")
+            if st.button("🔄 Try Again", key="try_again_voice"):
+                reset_state()
+
+# Text Input Section
+else:
+    # Use session ID in the key to ensure it's unique after reset
+    user_input = st.text_input(
+        "Enter your request:", 
+        value=st.session_state.user_input,
+        placeholder="Example: Create a tweet about AI technology",
+        key=f"text_input_{st.session_state.session_id}"
+    )
+    if user_input:
+        st.session_state.user_input = user_input
+        st.session_state.transcribed_text = user_input
+
+# Process Input and Generate Drafts
+if st.session_state.transcribed_text:
+    try:
+        if not st.session_state.drafts:
+            with st.spinner("🔍 Fetching relevant articles..."):
+                # Fetch articles
+                articles = fetch_articles_from_brave(
+                    st.session_state.transcribed_text, 
+                    st.session_state.session_id
+                )
+                st.session_state.articles = articles
+                st.success(f"✅ Found {len(articles)} relevant articles")
+            
+            with st.spinner("📚 Analyzing article content..."):
+                # Crawl article content
+                enriched_articles = crawl_articles(articles, st.session_state.session_id)
+                st.success("✅ Article content analyzed")
+            
+            with st.spinner("✍️ Generating tweet drafts..."):
+                # Generate drafts
+                drafts = generate_twitter_drafts(enriched_articles, st.session_state.session_id)
+                st.session_state.drafts = drafts
+                st.success("✅ Tweet drafts generated")
+                st.session_state.processing_complete = True
+        
+        # Display drafts
+        st.subheader("📋 Available Tweet Drafts")
+        st.write("Enter 0 to cancel, or 1-3 to select a draft:")
+        
+        # Display all drafts in a clean format
+        for draft in st.session_state.drafts:
+            st.write(f"\n🔹 Draft {draft['number']}:")
+            st.info(draft["text"])
+            st.write("---")
+        
+        # Simple numeric input for selection
+        selected_draft = st.text_input(
+            "Your choice (0 to cancel, 1-3 to select):", 
+            key=f"draft_selection_{st.session_state.session_id}"
+        )
+        
+        # Validate input
+        if selected_draft:
+            try:
+                draft_num = int(selected_draft)
+                if draft_num == 0:
+                    st.warning("✋ Operation cancelled.")
+                    # Log cancellation
+                    log_message_to_supabase(
+                        session_id=st.session_state.session_id,
+                        message_type="user_action",
+                        content="User cancelled tweet posting",
+                        metadata={"action": "cancel"}
+                    )
+                    if st.button("🔄 Try Again", key="try_again_cancel"):
+                        reset_state()
+                        
+                elif draft_num not in [1, 2, 3]:
+                    st.error("❌ Please enter 0 to cancel, or 1, 2, 3 to select a draft")
+                else:
+                    # Get selected tweet
+                    selected_tweet = next(
+                        draft for draft in st.session_state.drafts 
+                        if draft["number"] == draft_num
+                    )
+                    
+                    # Show confirmation section
+                    st.write("\n🔍 Selected Tweet:")
+                    st.info(selected_tweet["text"])
+                    
+                    # Log selection
+                    log_message_to_supabase(
+                        session_id=st.session_state.session_id,
+                        message_type="user_action",
+                        content=f"Draft {draft_num} selected for review",
+                        metadata={"selected_draft": selected_tweet}
+                    )
+                    
+                    if TWITTER_ENABLED:
+                        # Check for Twitter credentials
+                        twitter_creds = all([
+                            os.getenv("TWITTER_API_KEY"),
+                            os.getenv("TWITTER_API_SECRET"),
+                            os.getenv("TWITTER_ACCESS_TOKEN"),
+                            os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+                        ])
+
+                        if not twitter_creds:
+                            missing_creds = []
+                            if not os.getenv("TWITTER_API_KEY"): missing_creds.append("TWITTER_API_KEY")
+                            if not os.getenv("TWITTER_API_SECRET"): missing_creds.append("TWITTER_API_SECRET")
+                            if not os.getenv("TWITTER_ACCESS_TOKEN"): missing_creds.append("TWITTER_ACCESS_TOKEN")
+                            if not os.getenv("TWITTER_ACCESS_TOKEN_SECRET"): missing_creds.append("TWITTER_ACCESS_TOKEN_SECRET")
+                            st.error(f"❌ Missing Twitter credentials: {', '.join(missing_creds)}")
+                            st.info("Please add these credentials to your .env file. See .env.example for instructions.")
+                        else:
+                            try:
+                                with st.spinner("🐦 Posting to Twitter (X)..."):
+                                    result = post_tweet(
+                                        selected_tweet['text'],
+                                        st.session_state.session_id
+                                    )
+                                    
+                                    if result['success']:
+                                        st.success("✅ Tweet published successfully!")
+                                        st.write(f"🔗 Tweet URL: {result['tweet_url']}")
+                            except Exception as e:
+                                st.error(f"❌ Error posting tweet: {str(e)}")
+                    else:
+                        st.error("⚠️ Twitter integration is not enabled. Please check if tweepy is installed correctly.")
+                        st.info("Selected tweet text (copy to post manually):")
+                        st.code(selected_tweet["text"])
+                    
+                    if st.button("🔄 Try Again", key="try_again_after_post"):
+                        reset_state()
+                            
+            except ValueError:
+                st.error("❌ Please enter 0 to cancel, or 1, 2, 3 to select a draft")
+                
+    except Exception as e:
+        st.error(f"❌ Error: {str(e)}")
+        # Log error
+        log_message_to_supabase(
+            session_id=st.session_state.session_id,
+            message_type="error",
+            content=f"Error in tweet generation process: {str(e)}"
+        )
+        if st.button("🔄 Try Again", key="try_again_error"):
+            reset_state()
+</file>
+
+<file path="supabase_utils.py">
+import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Supabase client
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def log_message_to_supabase(session_id: str, message_type: str, content: str, metadata: dict = None):
+    """
+    Log a message to the Supabase 'messages' table.
+
+    Args:
+        session_id (str): Unique session identifier.
+        message_type (str): 'human' for user input, 'ai' for AI response.
+        content (str): The message content.
+        metadata (dict, optional): Additional details (e.g., query params, AI model info).
+    """
+    try:
+        message_data = {
+            "type": message_type,
+            "content": content,
+            "metadata": metadata or {}
+        }
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_data
+        }).execute()
+    except Exception as e:
+        print(f"Error logging message to Supabase: {e}")
+</file>
+
+<file path="test_openai_generation.py">
+import os
+import json
+from dotenv import load_dotenv
+from openai import OpenAI
+
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI client
+openai_client = OpenAI()
+
+def generate_twitter_drafts(articles):
+    """
+    Generate three engaging Twitter drafts based on article content.
+
+    Args:
+        articles (list): A list of articles with titles, URLs, and descriptions.
+
+    Returns:
+        list: A list of three Twitter drafts in JSON format.
+    """
+    try:
+        # Combine article details into context
+        context = "\n\n".join([
+            f"Title: {article['title']}\nURL: {article['url']}\nDescription: {article['description']}"
+            for article in articles
+        ])
+
+        # OpenAI prompt with JSON structure requirement
+        prompt = f"""
+        You are a social media expert. Using the following articles, generate 3 engaging and concise Twitter posts that encourage interaction and shares.
+
+        Requirements for each post:
+        - A catchy hook
+        - A key insight or thought-provoking question
+        - A call to action (e.g., "Read more", "Join the conversation", "What do you think?")
+        - Ensure the tone is conversational, engaging, and professional
+
+        Articles:
+        {context}
+
+        Return the drafts in the following JSON format:
+        {{
+            "drafts": [
+                {{
+                    "number": 1,
+                    "text": "The complete tweet text",
+                    "hook": "The hook used",
+                    "insight": "The key insight or question",
+                    "cta": "The call to action"
+                }},
+                {{
+                    "number": 2,
+                    "text": "The complete tweet text",
+                    "hook": "The hook used",
+                    "insight": "The key insight or question",
+                    "cta": "The call to action"
+                }},
+                {{
+                    "number": 3,
+                    "text": "The complete tweet text",
+                    "hook": "The hook used",
+                    "insight": "The key insight or question",
+                    "cta": "The call to action"
+                }}
+            ]
+        }}
+
+        Ensure each draft has a unique number from 1 to 3.
+        """
+
+        # Generate response using OpenAI GPT-4
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a social media expert. Always respond with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={ "type": "json_object" }
+        )
+
+        # Parse JSON response
+        text = response.choices[0].message.content.strip()
+        drafts_data = json.loads(text)
+
+        return drafts_data["drafts"]
+    except json.JSONDecodeError as e:
+        raise Exception(f"Error parsing JSON response: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Error generating Twitter drafts: {str(e)}")
+
+
+if __name__ == "__main__":
+    # Mockup data
+    articles = [
+        {"title": "AI and the Future", "url": "https://example.com/ai-future", "description": "How AI is reshaping industries."},
+        {"title": "AI Tools Revolution", "url": "https://example.com/ai-tools", "description": "Discover cutting-edge AI tools."},
+        {"title": "Ethics of AI", "url": "https://example.com/ethics-ai", "description": "Exploring the moral challenges of AI."}
+    ]
+
+    # Generate drafts
+    try:
+        drafts = generate_twitter_drafts(articles)
+        print("Generated Twitter Drafts:\n")
+        print(json.dumps(drafts, indent=2))
+    except Exception as e:
+        print(f"Failed to generate drafts: {e}")
+</file>
+
+<file path="test_twitter_post.py">
+import os
+from dotenv import load_dotenv
+import tweepy
+
+def test_twitter_posting():
+    """
+    Test Twitter posting functionality with OAuth 1.0a.
+    Prints detailed information about the process and any errors.
+    """
+    print("\n=== Testing Twitter Posting (OAuth 1.0a) ===")
+    
+    # Load environment variables
+    load_dotenv()
+    print("\nChecking Twitter credentials...")
+    
+    # Check for required credentials
+    required_vars = [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+    ]
+    
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing_vars:
+        print("\n❌ Error: Missing required Twitter credentials:")
+        for var in missing_vars:
+            print(f"  - {var}")
+        print("\nPlease follow these steps to set up your Twitter API credentials:")
+        print("1. Go to https://developer.twitter.com/en/portal/dashboard")
+        print("2. Select your project and app")
+        print("3. Go to 'Keys and tokens'")
+        print("4. Under 'Consumer Keys', find your API Key and Secret")
+        print("5. Under 'Authentication Tokens', generate Access Token & Secret")
+        print("6. Make sure your App has 'Read and Write' permissions")
+        print("7. Update your .env file with the credentials")
+        return
+    
+    print("✅ All required Twitter credentials found")
+    
+    try:
+        # Initialize Twitter client
+        client = tweepy.Client(
+            consumer_key=os.getenv("TWITTER_API_KEY"),
+            consumer_secret=os.getenv("TWITTER_API_SECRET"),
+            access_token=os.getenv("TWITTER_ACCESS_TOKEN"),
+            access_token_secret=os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+        )
+        
+        # Test authentication
+        print("\nTesting authentication...")
+        me = client.get_me()
+        print(f"✅ Connected to Twitter as: @{me.data.username}")
+        
+        # Test tweet content
+        test_tweet = "This is a test tweet from AI Tweet Generator 🤖 #TestTweet"
+        print(f"\nAttempting to post test tweet:\n{test_tweet}")
+        
+        # Post tweet
+        response = client.create_tweet(text=test_tweet)
+        
+        if response and response.data:
+            tweet_id = response.data["id"]
+            tweet_url = f"https://twitter.com/user/status/{tweet_id}"
+            print("\n✅ Tweet posted successfully!")
+            print(f"Tweet ID: {tweet_id}")
+            print(f"Tweet URL: {tweet_url}")
+            print(f"Tweet text: {test_tweet}")
+        else:
+            print("\n❌ Failed to post tweet: No response data received")
+            
+    except tweepy.errors.Forbidden as e:
+        print("\n❌ Error: Twitter API Permission Error")
+        print("Make sure your App has 'Read and Write' permissions.")
+        print("\nPlease verify:")
+        print("1. App permissions are set to 'Read and Write'")
+        print("2. Access Token & Secret have write permissions")
+        print("3. Regenerate Access Token & Secret if needed")
+        print(f"\nOriginal error: {str(e)}")
+            
+    except Exception as e:
+        print("\n❌ Error occurred while posting tweet:")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        
+        # Additional error details for debugging
+        print("\nDebug information:")
+        print("Twitter API credentials present:")
+        for var in required_vars:
+            masked_value = "✅ Set" if os.getenv(var) else "❌ Missing"
+            print(f"  - {var}: {masked_value}")
+
+if __name__ == "__main__":
+    test_twitter_posting()
+</file>
+
+<file path="twitter_auth.py">
+import os
+import webbrowser
+import ssl
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
+import tweepy
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get credentials from environment variables
+CLIENT_ID = os.getenv("TWITTER_CLIENT_ID")
+CLIENT_SECRET = os.getenv("TWITTER_CLIENT_SECRET")
+
+# OAuth 2.0 settings
+CALLBACK_URL = "https://127.0.0.1:8000/callback"
+SCOPES = ["tweet.read", "tweet.write", "users.read", "offline.access"]
+
+class CallbackHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Handle the OAuth callback"""
+        try:
+            # Parse the callback URL
+            query_components = parse_qs(urlparse(self.path).query)
+            
+            if "code" in query_components:
+                # Get the authorization code
+                auth_code = query_components["code"][0]
+                
+                # Exchange code for tokens
+                oauth2_user_handler = tweepy.OAuth2UserHandler(
+                    client_id=CLIENT_ID,
+                    client_secret=CLIENT_SECRET,
+                    redirect_uri=CALLBACK_URL,
+                    scope=SCOPES
+                )
+                
+                # Get access token
+                access_token = oauth2_user_handler.fetch_token(auth_code)
+                
+                # Send success response
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                
+                # Display tokens
+                response = f"""
+                <html>
+                <body>
+                <h1>Authentication Successful!</h1>
+                <p>Add these tokens to your .env file:</p>
+                <pre>
+                TWITTER_ACCESS_TOKEN={access_token["access_token"]}
+                TWITTER_REFRESH_TOKEN={access_token["refresh_token"]}
+                </pre>
+                <p>You can close this window now.</p>
+                </body>
+                </html>
+                """
+                self.wfile.write(response.encode())
+                
+                # Store tokens globally for the main script to access
+                self.server.access_token = access_token
+                
+            else:
+                # Handle error
+                self.send_response(400)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"Error: No authorization code received")
+                
+        except Exception as e:
+            # Handle error
+            self.send_response(500)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(f"Error: {str(e)}".encode())
+    
+    def log_message(self, format, *args):
+        """Suppress logging"""
+        pass
+
+def create_self_signed_cert():
+    """Create a self-signed certificate for HTTPS"""
+    from OpenSSL import crypto
+    from datetime import datetime, timedelta
+    
+    # Generate key
+    key = crypto.PKey()
+    key.generate_key(crypto.TYPE_RSA, 2048)
+    
+    # Generate certificate
+    cert = crypto.X509()
+    cert.get_subject().CN = "127.0.0.1"
+    cert.set_serial_number(1000)
+    cert.gmtime_adj_notBefore(0)
+    cert.gmtime_adj_notAfter(365*24*60*60)  # Valid for one year
+    cert.set_issuer(cert.get_subject())
+    cert.set_pubkey(key)
+    cert.sign(key, 'sha256')
+    
+    # Save certificate and private key
+    with open("server.crt", "wb") as f:
+        f.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
+    with open("server.key", "wb") as f:
+        f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, key))
+
+def main():
+    """Main function to handle Twitter OAuth 2.0 authentication"""
+    if not all([CLIENT_ID, CLIENT_SECRET]):
+        print("Error: TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET must be set in .env file")
+        return
+    
+    print("\n=== Twitter OAuth 2.0 Authentication ===")
+    print("\nThis script will help you obtain OAuth 2.0 tokens for Twitter API v2.")
+    
+    try:
+        # Create self-signed certificate
+        print("\nCreating self-signed certificate...")
+        create_self_signed_cert()
+        
+        # Initialize OAuth 2.0 handler
+        oauth2_user_handler = tweepy.OAuth2UserHandler(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            redirect_uri=CALLBACK_URL,
+            scope=SCOPES
+        )
+        
+        # Get authorization URL
+        auth_url = oauth2_user_handler.get_authorization_url()
+        
+        print("\nStarting local HTTPS server to handle callback...")
+        server = HTTPServer(("127.0.0.1", 8000), CallbackHandler)
+        
+        # Create SSL context
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+        
+        # Wrap socket with SSL context
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        
+        print("\nOpening browser for authentication...")
+        webbrowser.open(auth_url)
+        
+        print("\nWaiting for callback...")
+        server.handle_request()
+        
+        if hasattr(server, "access_token"):
+            print("\n✅ Authentication successful!")
+            print("\nAdd these tokens to your .env file:")
+            print(f"TWITTER_ACCESS_TOKEN={server.access_token['access_token']}")
+            print(f"TWITTER_REFRESH_TOKEN={server.access_token['refresh_token']}")
+        else:
+            print("\n❌ Authentication failed: No tokens received")
+        
+    except Exception as e:
+        print(f"\n❌ Error: {str(e)}")
+    
+    finally:
+        # Clean up certificate files
+        try:
+            os.remove("server.crt")
+            os.remove("server.key")
+        except:
+            pass
+        print("\nYou can close this window now.")
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="twitter_utils.py">
+import os
+import tweepy
+from dotenv import load_dotenv
+from supabase_utils import log_message_to_supabase
+
+# Load environment variables
+load_dotenv()
+
+def get_twitter_client():
+    """
+    Initialize and return a Twitter API client using OAuth 1.0a.
+    """
+    # Get credentials from environment variables
+    api_key = os.getenv("TWITTER_API_KEY")
+    api_secret = os.getenv("TWITTER_API_SECRET")
+    access_token = os.getenv("TWITTER_ACCESS_TOKEN")
+    access_token_secret = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+    
+    if not all([api_key, api_secret, access_token, access_token_secret]):
+        raise ValueError("""Missing Twitter API credentials in environment variables. 
+                       Make sure you have all required credentials in your .env file:
+                       - TWITTER_API_KEY
+                       - TWITTER_API_SECRET
+                       - TWITTER_ACCESS_TOKEN
+                       - TWITTER_ACCESS_TOKEN_SECRET""")
+    
+    try:
+        # Initialize Twitter client with OAuth 1.0a
+        client = tweepy.Client(
+            consumer_key=api_key,
+            consumer_secret=api_secret,
+            access_token=access_token,
+            access_token_secret=access_token_secret
+        )
+        
+        # Test the client
+        me = client.get_me()
+        print(f"Connected to Twitter as: {me.data.username}")
+        
+        return client
+        
+    except Exception as e:
+        raise Exception(f"Failed to initialize Twitter client: {str(e)}")
+
+def post_tweet(tweet_text: str, session_id: str) -> dict:
+    """
+    Post a tweet using the Twitter API with OAuth 1.0a.
+    
+    Args:
+        tweet_text (str): The text to tweet
+        session_id (str): Session ID for logging
+    
+    Returns:
+        dict: Response from Twitter API containing tweet details
+    """
+    try:
+        # Get Twitter client
+        client = get_twitter_client()
+        
+        # Log attempt
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="system",
+            content="Attempting to post tweet",
+            metadata={"tweet_text": tweet_text}
+        )
+        
+        # Post tweet
+        response = client.create_tweet(text=tweet_text)
+        
+        if response and response.data:
+            tweet_id = response.data["id"]
+            tweet_url = f"https://twitter.com/user/status/{tweet_id}"
+            
+            # Log successful tweet
+            log_message_to_supabase(
+                session_id=session_id,
+                message_type="system",
+                content="Tweet posted successfully",
+                metadata={
+                    "tweet_id": tweet_id,
+                    "tweet_url": tweet_url,
+                    "tweet_text": tweet_text
+                }
+            )
+            
+            return {
+                "success": True,
+                "tweet_id": tweet_id,
+                "tweet_url": tweet_url,
+                "tweet_text": tweet_text
+            }
+        else:
+            raise Exception("No response data received from Twitter API")
+            
+    except Exception as e:
+        error_message = f"Error posting tweet: {str(e)}"
+        # Log error with detailed information
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=error_message,
+            metadata={
+                "tweet_text": tweet_text,
+                "error_type": type(e).__name__,
+                "error_details": str(e)
+            }
+        )
+        raise Exception(error_message)
+</file>
+
+<file path="voice_input.py">
+import speech_recognition as sr
+
+def capture_voice_input():
+    """
+    Capture and transcribe voice input using the SpeechRecognition library.
+
+    Returns:
+        str: Transcribed text from the user's voice input.
+    """
+    recognizer = sr.Recognizer()
+    try:
+        with sr.Microphone() as source:
+            print("Listening... Please speak into the microphone.")
+            audio = recognizer.listen(source, timeout=10)  # Timeout after 10 seconds
+            print("Processing voice input...")
+            # Recognize speech using Google Web Speech API
+            transcribed_text = recognizer.recognize_google(audio)
+            print(f"Transcribed Text: {transcribed_text}")
+            return transcribed_text
+    except sr.WaitTimeoutError:
+        print("No speech detected within the timeout period.")
+        return None
+    except sr.UnknownValueError:
+        print("Sorry, could not understand the audio.")
+        return None
+    except sr.RequestError as e:
+        print(f"Could not request results from Google Speech Recognition service; {e}")
+        return None
+</file>
+
+<file path="voice_utils.py">
+from openai import OpenAI
+from supabase_utils import log_message_to_supabase
+
+client = OpenAI()
+
+def transcribe_audio_file(audio_file, session_id: str) -> str:
+    """
+    Transcribe audio using OpenAI Whisper API.
+    
+    Args:
+        audio_file: Audio file object from Streamlit's file_uploader
+        session_id (str): Session ID for logging
+    
+    Returns:
+        str: Transcribed text
+    """
+    try:
+        # Transcribe using Whisper
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
+        
+        # Log successful transcription
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="system",
+            content="Audio transcribed successfully",
+            metadata={"transcription": transcript.text}
+        )
+        
+        return transcript.text
+        
+    except Exception as e:
+        error_message = f"Error transcribing audio: {str(e)}"
+        # Log error
+        log_message_to_supabase(
+            session_id=session_id,
+            message_type="error",
+            content=error_message
+        )
+        raise Exception(error_message)
+</file>
+
+</files>

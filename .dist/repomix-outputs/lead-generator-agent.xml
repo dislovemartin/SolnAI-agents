@@ -1,0 +1,1039 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.dockerignore
+.env.example
+Dockerfile
+leadgen_agent_endpoint.py
+leadgen_agent.py
+README.md
+studio_leadgen_agent_endpoint.py
+studio_leadgen_agent.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".dockerignore">
+__pycache__
+venv
+.env
+</file>
+
+<file path=".env.example">
+# Get your SUPABASE URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+
+# Get your Open Router API Key here after registering:
+# https://openrouter.ai/settings/keys
+OPEN_ROUTER_API_KEY=
+
+# The LLM you want to use from OpenRouter. See the list of models here:
+# https://openrouter.ai/models
+# Example: deepseek/deepseek-chat 
+LLM_MODEL=
+
+# This this personal Hunter.io access token by following these instructions -
+HUNTER_API_KEY=
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Install the Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+CMD ["sh", "-c", "uvicorn studio_leadgen_agent_endpoint:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="leadgen_agent_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import httpx
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+from leadgen_agent import hunter_agent, HunterDeps
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI(title="Lead Generator API")
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Request/Response Models
+class LeadRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class LeadResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/lead-generator", response_model=LeadResponse)
+async def lead_generator_endpoint(
+    request: LeadRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Store user's query immediately
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        # Immediately store processing message
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="Extracting leads info...\nPlease wait for few minutes.",
+            data={"request_id": f"{request.request_id}_processing"}
+        )
+
+        # Return success immediately
+        # Create background task for processing
+        async def process_request():
+            try:
+                async with httpx.AsyncClient() as client:
+                    deps = HunterDeps(
+                        client=client,
+                        hunter_api_key=os.getenv("HUNTER_API_KEY")
+                    )
+
+                    # Run the agent
+                    result = await hunter_agent.run(
+                        request.query,
+                        deps=deps
+                    )
+
+                # Store agent's final response
+                await store_message(
+                    session_id=request.session_id,
+                    message_type="ai",
+                    content=result.data,
+                    data={"request_id": request.request_id}
+                )
+            except Exception as e:
+                error_message = f"Error processing request: {str(e)}"
+                print(error_message)
+                await store_message(
+                    session_id=request.session_id,
+                    message_type="ai",
+                    content="I apologize, but I encountered an error processing your request.",
+                    data={"error": error_message, "request_id": request.request_id}
+                )
+
+        # Start background task
+        import asyncio
+        asyncio.create_task(process_request())
+
+        # Return immediately
+        return LeadResponse(success=True)
+
+    except Exception as e:
+        error_message = f"Error processing request: {str(e)}"
+        print(error_message)
+        return LeadResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="leadgen_agent.py">
+from __future__ import annotations as _annotations
+
+import os
+from dataclasses import dataclass
+from typing import Optional, List
+import httpx
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIModel
+from dotenv import load_dotenv
+import logfire
+
+# Configure logging
+logfire.configure(send_to_logfire='if-token-present')
+
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI model with OpenRouter
+llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
+model = OpenAIModel(
+    llm,
+    base_url='https://openrouter.ai/api/v1',
+    api_key=os.getenv('OPEN_ROUTER_API_KEY')
+)
+
+@dataclass
+class HunterDeps:
+    """Dependencies for the Hunter.io API agent."""
+    client: httpx.AsyncClient
+    hunter_api_key: str | None = None
+
+system_prompt = """
+You are a lead generation expert with access to Hunter.io API to help users find business email addresses and generate leads.
+
+Your capabilities include:
+1. Finding email addresses for specific domains
+2. Getting email counts and statistics for domains
+3. Verifying email addresses
+4. Searching for specific people's email addresses
+
+Always verify the domain/email exists before providing information. Be precise and professional in your responses.
+
+When answering, format the response clearly with sections for:
+- Domain Information
+- Email Addresses Found (if applicable)
+- Verification Status (if applicable)
+- Department Statistics (if applicable)
+
+For each response, start with a brief summary of what you found, then provide the detailed information.
+"""
+
+# Initialize the Hunter.io agent
+hunter_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    deps_type=HunterDeps,
+    retries=2
+)
+
+@hunter_agent.tool
+async def get_email_count(ctx: RunContext[HunterDeps], domain: str) -> str:
+    """Get the count and statistics of email addresses for a domain.
+
+    Args:
+        ctx: The run context containing dependencies.
+        domain: The domain name to search (e.g., 'google.com').
+
+    Returns:
+        str: Formatted string containing email statistics for the domain.
+    """
+    params = {
+        'domain': domain,
+        'api_key': ctx.deps.hunter_api_key
+    }
+    
+    response = await ctx.deps.client.get(
+        'https://api.hunter.io/v2/email-count',
+        params=params
+    )
+    
+    if response.status_code != 200:
+        return f"Failed to get email count: {response.text}"
+    
+    data = response.json()['data']
+    return (
+        f"Domain: {domain}\n"
+        f"Total emails found: {data['total']}\n"
+        f"Personal emails: {data['personal_emails']}\n"
+        f"Generic emails: {data['generic_emails']}\n"
+        f"\nDepartment breakdown:\n"
+        f"- Executive: {data['department']['executive']}\n"
+        f"- IT: {data['department']['it']}\n"
+        f"- Sales: {data['department']['sales']}\n"
+        f"- Marketing: {data['department']['marketing']}"
+    )
+
+@hunter_agent.tool
+async def domain_search(
+    ctx: RunContext[HunterDeps], 
+    domain: str,
+    limit: Optional[int] = 10
+) -> str:
+    """Search for email addresses from a specific domain."""
+    try:
+        print(f"Starting domain search for: {domain}")  # Debug log
+        
+        params = {
+            'domain': domain,
+            'limit': limit,
+            'api_key': ctx.deps.hunter_api_key
+        }
+        
+        print("Making API request to Hunter.io...")  # Debug log
+        response = await ctx.deps.client.get(
+            'https://api.hunter.io/v2/domain-search',
+            params=params,
+            timeout=30.0  # Add timeout
+        )
+        
+        print(f"Response status: {response.status_code}")  # Debug log
+        print(f"Response body: {response.text}")  # Debug log
+        
+        if response.status_code != 200:
+            return f"Failed to search domain: {response.text}"
+        
+        data = response.json()['data']
+        emails = data.get('emails', [])
+        
+        result = [f"Domain: {domain}"]
+        for email in emails:
+            confidence = email.get('confidence', 'N/A')
+            position = email.get('position', 'N/A')
+            result.append(
+                f"\nEmail: {email['value']}\n"
+                f"Type: {email['type']}\n"
+                f"Confidence: {confidence}%\n"
+                f"Position: {position}"
+            )
+        
+        return "\n".join(result)
+    except Exception as e:
+        print(f"Error in domain_search: {str(e)}")  # Debug log
+        return f"An error occurred: {str(e)}"
+
+@hunter_agent.tool
+async def verify_email(ctx: RunContext[HunterDeps], email: str) -> str:
+    """Verify if an email address is valid and get detailed information.
+
+    Args:
+        ctx: The run context containing dependencies.
+        email: The email address to verify.
+
+    Returns:
+        str: Formatted string containing verification results and status.
+    """
+    params = {
+        'email': email,
+        'api_key': ctx.deps.hunter_api_key
+    }
+    
+    response = await ctx.deps.client.get(
+        'https://api.hunter.io/v2/email-verifier',
+        params=params
+    )
+    
+    if response.status_code != 200:
+        return f"Failed to verify email: {response.text}"
+    
+    data = response.json()['data']
+    return (
+        f"Email: {email}\n"
+        f"Status: {data['status']}\n"
+        f"Score: {data['score']}\n"
+        f"Disposable: {'Yes' if data['disposable'] else 'No'}\n"
+        f"Webmail: {'Yes' if data['webmail'] else 'No'}\n"
+        f"MX Records: {'Yes' if data['mx_records'] else 'No'}\n"
+        f"SMTP Valid: {'Yes' if data['smtp_check'] else 'No'}"
+    )
+</file>
+
+<file path="README.md">
+# Pydantic AI: Lead Generator Agent
+
+Author: [Asvin Kumar](https://www.linkedin.com/in/asvin-kumar-1107/)
+
+An intelligent lead generation agent built using Pydantic AI and Hunter.io API, capable of finding business email addresses, verifying emails, and generating leads. The agent can search domains for email addresses, verify email validity, and provide detailed statistics about email distribution within organizations.
+
+**Note**: For the autogen_studio (see the studio_ versions of the scripts), the Hunter.io calls have been mocked since the API does not scale for the entire community trying this agent on the Studio.
+
+## Features
+
+- Domain email search and analysis
+- Email address verification
+- Email count statistics by department
+- Real-time processing status updates
+- Conversation history tracking with Supabase
+- Support for both OpenAI and OpenRouter models
+- Available as API endpoint with FastAPI
+
+## Prerequisites
+
+- Python 3.11+
+- Hunter.io API key
+- OpenRouter API key
+- Supabase account for conversation storage
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/SolnAI-agents.git
+cd SolnAI-agents/lead-generator-agent
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Set up environment variables:
+   - Create a `.env` file with your API keys and preferences:
+   ```env
+   HUNTER_API_KEY=your_hunter_api_key
+   OPEN_ROUTER_API_KEY=your_openrouter_api_key
+   LLM_MODEL=your_chosen_model  # e.g., deepseek/deepseek-chat
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_KEY=your_supabase_key
+   API_BEARER_TOKEN=your_bearer_token
+   ```
+
+## Usage
+
+### Running with Docker
+
+1. Build the Docker image:
+```bash
+docker build -t lead-generator-agent .
+```
+
+2. Run the container:
+```bash
+docker run -d -p 8001:8001 --env-file .env lead-generator-agent
+```
+
+### API Endpoints
+
+The main endpoint is available at: `POST http://localhost:8001/api/lead-generator`
+
+Example request body:
+```json
+{
+    "query": "Find email addresses for google.com",
+    "user_id": "test_user",
+    "request_id": "123",
+    "session_id": "test_session"
+}
+```
+
+### Example Queries
+
+1. Domain Email Search:
+```json
+{
+    "query": "Find all email addresses for microsoft.com",
+    "user_id": "user1",
+    "request_id": "req1",
+    "session_id": "session1"
+}
+```
+
+2. Email Statistics:
+```json
+{
+    "query": "Get email count and department statistics for apple.com",
+    "user_id": "user1",
+    "request_id": "req2",
+    "session_id": "session1"
+}
+```
+
+3. Email Verification:
+```json
+{
+    "query": "Verify if john.doe@example.com is valid",
+    "user_id": "user1",
+    "request_id": "req3",
+    "session_id": "session1"
+}
+```
+
+4. Department-Specific Search:
+```json
+{
+    "query": "Find IT department emails in amazon.com",
+    "user_id": "user1",
+    "request_id": "req4",
+    "session_id": "session1"
+}
+```
+
+## Response Format
+
+The agent provides detailed responses including:
+- Domain Information
+- Email Addresses Found
+- Verification Status
+- Department Statistics
+- Confidence Scores
+- Position Information
+
+Example response in Supabase:
+```json
+{
+    "type": "ai",
+    "content": {
+        "domain": "example.com",
+        "emails": [
+            {
+                "email": "john.doe@example.com",
+                "type": "personal",
+                "confidence": 95,
+                "position": "Software Engineer"
+            }
+        ],
+        "statistics": {
+            "total": 150,
+            "personal": 120,
+            "generic": 30
+        }
+    }
+}
+```
+
+## Error Handling
+
+The agent includes built-in error handling for:
+- Invalid domains
+- Rate limiting
+- Authentication issues
+- API timeouts
+- Invalid email formats
+
+## Project Structure
+
+- `leadgen_agent.py`: Core agent implementation with Hunter.io API integration
+- `leadgen_agent_endpoint.py`: FastAPI endpoint for the agent
+- `requirements.txt`: Project dependencies
+- `Dockerfile`: Container configuration
+- `.env`: Environment variables
+
+## Configuration
+
+### LLM Models
+
+The agent uses OpenRouter as the API endpoint, supporting various models:
+```env
+LLM_MODEL=deepseek/deepseek-chat  # Default model
+```
+
+### API Keys
+
+- **Hunter.io API Key**: Get your API key from [Hunter.io](https://hunter.io/api-keys)
+- **OpenRouter API Key**: Get your API key from [OpenRouter](https://openrouter.ai/)
+- **Supabase Keys**: Get your project URL and service key from [Supabase](https://supabase.com/dashboard)
+
+## Limitations
+
+- Hunter.io API rate limits apply
+- Some email addresses might be protected or hidden
+- Accuracy depends on Hunter.io's database
+- Some domains might block email harvesting
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="studio_leadgen_agent_endpoint.py">
+"""
+autogen_studio version with mocked Hunter.io API calls since the API is pretty expensive
+and wouldn't scale for many people trying out the agent.
+
+See leadgen_agent_endpoint.py for the primary implementation that actually uses Hunter.io!
+"""
+
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import httpx
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+from studio_leadgen_agent import hunter_agent, HunterDeps
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI(title="Lead Generator API")
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Request/Response Models
+class LeadRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class LeadResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/lead-generator", response_model=LeadResponse)
+async def lead_generator_endpoint(
+    request: LeadRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Store user's query immediately
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        # Immediately store processing message
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="Extracting leads info...\nPlease wait for few minutes.",
+            data={"request_id": f"{request.request_id}_processing"}
+        )
+
+        # Return success immediately
+        # Create background task for processing
+        async def process_request():
+            try:
+                async with httpx.AsyncClient() as client:
+                    deps = HunterDeps(
+                        client=client,
+                        hunter_api_key=os.getenv("HUNTER_API_KEY")
+                    )
+
+                    # Run the agent
+                    result = await hunter_agent.run(
+                        request.query,
+                        deps=deps
+                    )
+
+                # Store agent's final response
+                await store_message(
+                    session_id=request.session_id,
+                    message_type="ai",
+                    content=result.data,
+                    data={"request_id": request.request_id}
+                )
+            except Exception as e:
+                error_message = f"Error processing request: {str(e)}"
+                print(error_message)
+                await store_message(
+                    session_id=request.session_id,
+                    message_type="ai",
+                    content="I apologize, but I encountered an error processing your request.",
+                    data={"error": error_message, "request_id": request.request_id}
+                )
+
+        # Start background task
+        import asyncio
+        asyncio.create_task(process_request())
+
+        # Return immediately
+        return LeadResponse(success=True)
+
+    except Exception as e:
+        error_message = f"Error processing request: {str(e)}"
+        print(error_message)
+        return LeadResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="studio_leadgen_agent.py">
+from __future__ import annotations as _annotations
+
+import os
+from dataclasses import dataclass
+from typing import Optional, List
+import httpx
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIModel
+from dotenv import load_dotenv
+import logfire
+
+# Configure logging
+logfire.configure(send_to_logfire='if-token-present')
+
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI model with OpenRouter
+llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
+model = OpenAIModel(
+    llm,
+    base_url='https://openrouter.ai/api/v1',
+    api_key=os.getenv('OPEN_ROUTER_API_KEY')
+)
+
+@dataclass
+class HunterDeps:
+    """Dependencies for the Hunter.io API agent."""
+    client: httpx.AsyncClient
+    hunter_api_key: str | None = None
+
+system_prompt = """
+You are a lead generation expert with access to Hunter.io API to help users find business email addresses and generate leads.
+
+Your capabilities include:
+1. Finding email addresses for specific domains
+2. Getting email counts and statistics for domains
+3. Verifying email addresses
+4. Searching for specific people's email addresses
+
+Always verify the domain/email exists before providing information. Be precise and professional in your responses.
+
+When answering, format the response clearly with sections for:
+- Domain Information
+- Email Addresses Found (if applicable)
+- Verification Status (if applicable)
+- Department Statistics (if applicable)
+
+For each response, start with a brief summary of what you found, then provide the detailed information.
+"""
+
+# Initialize the Hunter.io agent
+hunter_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    deps_type=HunterDeps,
+    retries=2
+)
+
+# Mock data generators for simulating Hunter.io API responses
+def generate_mock_email_count(domain: str) -> dict:
+    """Generate mock email count data for a specific domain."""
+    return {
+        'total': 150,
+        'personal_emails': 100,
+        'generic_emails': 50,
+        'department': {
+            'executive': 15,
+            'it': 35,
+            'sales': 60,
+            'marketing': 40
+        }
+    }
+
+def generate_mock_domain_emails(domain: str, limit: int = 10) -> list:
+    """Generate mock email data for a specific domain."""
+    common_names = [
+        ('john.doe', 'Software Engineer'),
+        ('jane.smith', 'Product Manager'),
+        ('mike.wilson', 'Sales Director'),
+        ('sarah.jones', 'Marketing Manager'),
+        ('alex.brown', 'CTO'),
+        ('emma.davis', 'HR Manager'),
+        ('david.miller', 'Frontend Developer'),
+        ('lisa.taylor', 'Backend Engineer'),
+        ('james.anderson', 'Data Scientist'),
+        ('rachel.white', 'UX Designer')
+    ]
+    
+    emails = []
+    for i in range(min(limit, len(common_names))):
+        name, position = common_names[i]
+        emails.append({
+            'value': f'{name}@{domain}',
+            'type': 'personal',
+            'confidence': 85 + (i % 3) * 5,  # Varies between 85-95
+            'position': position
+        })
+    
+    # Add one generic email if we haven't hit the limit
+    if limit > len(emails):
+        emails.append({
+            'value': f'info@{domain}',
+            'type': 'generic',
+            'confidence': 100,
+            'position': None
+        })
+    
+    return emails
+
+def generate_mock_email_verification(email: str) -> dict:
+    """Generate mock verification data for a specific email."""
+    # Parse domain from email
+    _, domain = email.split('@')
+    
+    # More realistic verification based on email pattern
+    is_generic = email.startswith(('info@', 'contact@', 'support@'))
+    return {
+        'status': 'valid',
+        'score': 90 if not is_generic else 95,
+        'disposable': False,
+        'webmail': domain in ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'],
+        'mx_records': True,
+        'smtp_check': True
+    }
+
+@hunter_agent.tool
+async def get_email_count(ctx: RunContext[HunterDeps], domain: str) -> str:
+    """Get the count and statistics of email addresses for a domain.
+
+    Args:
+        ctx: The run context containing dependencies.
+        domain: The domain name to search (e.g., 'google.com').
+
+    Returns:
+        str: Formatted string containing email statistics for the domain.
+    """
+    data = generate_mock_email_count(domain)
+    
+    return (
+        f"Domain: {domain}\n"
+        f"Total emails found: {data['total']}\n"
+        f"Personal emails: {data['personal_emails']}\n"
+        f"Generic emails: {data['generic_emails']}\n"
+        f"\nDepartment breakdown:\n"
+        f"- Executive: {data['department']['executive']}\n"
+        f"- IT: {data['department']['it']}\n"
+        f"- Sales: {data['department']['sales']}\n"
+        f"- Marketing: {data['department']['marketing']}"
+    )
+
+@hunter_agent.tool
+async def domain_search(
+    ctx: RunContext[HunterDeps], 
+    domain: str,
+    limit: Optional[int] = 10
+) -> str:
+    """Search for email addresses from a specific domain."""
+    try:
+        emails = generate_mock_domain_emails(domain, limit)
+        
+        result = [f"Domain: {domain}"]
+        for email in emails:
+            confidence = email.get('confidence', 'N/A')
+            position = email.get('position', 'N/A')
+            result.append(
+                f"\nEmail: {email['value']}\n"
+                f"Type: {email['type']}\n"
+                f"Confidence: {confidence}%\n"
+                f"Position: {position}"
+            )
+        
+        return "\n".join(result)
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
+
+@hunter_agent.tool
+async def verify_email(ctx: RunContext[HunterDeps], email: str) -> str:
+    """Verify if an email address is valid and get detailed information.
+
+    Args:
+        ctx: The run context containing dependencies.
+        email: The email address to verify.
+
+    Returns:
+        str: Formatted string containing verification results and status.
+    """
+    data = generate_mock_email_verification(email)
+    
+    return (
+        f"Email: {email}\n"
+        f"Status: {data['status']}\n"
+        f"Score: {data['score']}\n"
+        f"Disposable: {'Yes' if data['disposable'] else 'No'}\n"
+        f"Webmail: {'Yes' if data['webmail'] else 'No'}\n"
+        f"MX Records: {'Yes' if data['mx_records'] else 'No'}\n"
+        f"SMTP Valid: {'Yes' if data['smtp_check'] else 'No'}"
+    )
+</file>
+
+</files>

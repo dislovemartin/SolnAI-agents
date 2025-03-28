@@ -1,0 +1,2247 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+agent_trial/
+  nba_agent_1.py
+templates/
+  index.html
+.dockerignore
+.gitignore
+Dockerfile
+nba_agent.py
+Procfile
+README.md
+requirements.txt
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="agent_trial/nba_agent_1.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
+import os
+import logging
+from openai import AsyncOpenAI
+import asyncio
+import requests
+from datetime import datetime, timedelta
+import dateparser
+import httpx
+import re
+from fastapi.responses import HTMLResponse
+import pytz
+
+# At the top of the file, after imports
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# After loading environment variables
+load_dotenv()
+
+# Check all required environment variables
+required_vars = [
+    "BALLDONTLIE_API_KEY",
+    "OPENAI_API_KEY",
+    "API_BEARER_TOKEN",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_KEY"
+]
+
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+logger.info("All required environment variables are set")
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://nbaagent-production.up.railway.app", "http://localhost:8001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+class NBAPredictor:
+    def __init__(self):
+        """Initialize the NBA predictor with API configuration"""
+        self.base_url = "https://api.balldontlie.io/v1"
+        self.api_key = os.getenv("BALLDONTLIE_API_KEY")
+        self.openai_client = AsyncOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+
+    def _get_current_nba_season(self) -> int:
+        """
+        Get the NBA season based on the game date.
+        For the 2023-24 season, use 2023.
+        """
+        return 2023  # Hardcode to 2023 for now since that's what the API expects
+
+    async def _is_notable_player(self, player: Dict) -> bool:
+        """Determine if a player is notable based on various factors."""
+        try:
+            # Get player's season averages
+            season_stats = await self._get_season_averages(player['id'])
+            
+            if season_stats:
+                # Consider a player notable if they meet any of these criteria
+                return any([
+                    season_stats.get('pts', 0) >= 10,  # Scores 10+ PPG
+                    season_stats.get('reb', 0) >= 5,   # 5+ RPG
+                    season_stats.get('ast', 0) >= 4,   # 4+ APG
+                    season_stats.get('min', '0') >= '20'  # Plays 20+ minutes
+                ])
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error checking if player is notable: {str(e)}")
+            return False
+
+    async def _get_season_averages(self, player_id: int) -> Dict:
+        """Get player's season averages for the current season."""
+        current_season = 2024  # NBA season 2024-25
+        url = f"{self.base_url}/season_averages"
+        params = {
+            "season": current_season,
+            "player_ids[]": [player_id]  # API expects array of player IDs
+        }
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                return data['data'][0] if data.get('data') else {}
+        except Exception as e:
+            logger.error(f"Error fetching season averages: {str(e)}")
+            return {}
+
+    async def _get_advanced_stats(self, player_id: int, season: int) -> Dict:
+        """Get player's advanced stats."""
+        url = f"{self.base_url}/stats/advanced"
+        params = {
+            "player_ids[]": [player_id],
+            "seasons[]": [season],
+            "per_page": 100
+        }
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching advanced stats: {str(e)}")
+            return {}
+
+    async def _get_team_standings(self, player_id: int) -> Dict:
+        """Get current team standings."""
+        url = f"{self.base_url}/standings"
+        params = {"season": 2023}
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Convert list to dictionary with team_id as key
+                standings_dict = {}
+                for team in data.get('data', []):
+                    if team['team']['id'] == player_id:
+                        standings_dict[player_id] = {
+                            'wins': team.get('wins', 0),
+                            'losses': team.get('losses', 0),
+                            'conference': team.get('conference', 'N/A'),
+                            'conference_rank': team.get('conference_rank', 'N/A'),
+                            'home_record': f"{team.get('home_wins', 0)}-{team.get('home_losses', 0)}",
+                            'road_record': f"{team.get('road_wins', 0)}-{team.get('road_losses', 0)}",
+                            'last_ten': f"{team.get('last_ten_wins', 0)}-{team.get('last_ten_losses', 0)}",
+                            'streak': f"{'W' if team.get('streak_type') == 'win' else 'L'}{team.get('streak', 0)}"
+                        }
+                return standings_dict
+                
+        except Exception as e:
+            logger.error(f"Error fetching standings: {str(e)}")
+            return {}
+
+    async def _get_team_leaders(self, team_id: int, season: int) -> Dict:
+        """Get team statistical leaders."""
+        url = f"{self.base_url}/leaders"
+        stats = ['pts', 'reb', 'ast', 'stl', 'blk']
+        leaders = {}
+        
+        for stat in stats:
+            params = {
+                "season": season,
+                "stat_type": stat
+            }
+            headers = {"Authorization": self.api_key}
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url, params=params, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    # Filter for team's leaders
+                    team_leaders = [p for p in data['data'] if p['player']['team_id'] == team_id]
+                    if team_leaders:
+                        leaders[stat] = team_leaders[0]
+            except Exception as e:
+                logger.error(f"Error fetching {stat} leaders: {str(e)}")
+        
+        return leaders
+
+    async def get_games(self, date: str) -> List[Dict]:
+        """Fetch games for a specific date"""
+        logger.info(f"Fetching games for date: {date}")
+        url = f"{self.base_url}/games"
+        headers = {'Authorization': self.api_key}
+        params = {'dates[]': date}
+        
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            games = response.json()['data']
+            logger.info(f"Found {len(games)} games for {date}")
+            return games
+        except Exception as e:
+            logger.error(f"Error fetching games: {str(e)}")
+            raise
+
+    async def get_team_injuries(self, team_id: int) -> List[Dict]:
+        """Fetch current injuries for a team"""
+        url = f"{self.base_url}/player_injuries"
+        headers = {'Authorization': self.api_key}
+        params = {'team_ids[]': [team_id]}
+        
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()['data']
+        except Exception as e:
+            logger.error(f"Error fetching injuries: {str(e)}")
+            return []
+
+    async def get_standings(self, season: int = 2023) -> Dict:
+        """Get current standings."""
+        url = f"{self.base_url}/standings"
+        params = {"season": season}
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Convert list to dictionary with team_id as key
+                standings_dict = {}
+                for team in data.get('data', []):
+                    standings_dict[team['team']['id']] = {
+                        'wins': team.get('wins', 0),
+                        'losses': team.get('losses', 0),
+                        'conference': team.get('conference', 'N/A'),
+                        'conference_rank': team.get('conference_rank', 'N/A'),
+                        'home_record': f"{team.get('home_wins', 0)}-{team.get('home_losses', 0)}",
+                        'road_record': f"{team.get('road_wins', 0)}-{team.get('road_losses', 0)}",
+                        'last_ten': f"{team.get('last_ten_wins', 0)}-{team.get('last_ten_losses', 0)}",
+                        'streak': f"{'W' if team.get('streak_type') == 'win' else 'L'}{team.get('streak', 0)}"
+                    }
+                return standings_dict
+                
+        except Exception as e:
+            logger.error(f"Error fetching standings: {str(e)}")
+            return {}
+
+    async def get_betting_odds(self, game_id: int = None, game_date: str = None) -> List[Dict]:
+        """Fetch betting odds for a game"""
+        try:
+            async with httpx.AsyncClient() as client:
+                url = "https://api.balldontlie.io/v1/odds"
+                params = {}
+                if game_id:
+                    params['game_id'] = game_id
+                if game_date:
+                    params['date'] = game_date
+                    
+                response = await client.get(
+                    url,
+                    params=params,
+                    headers={"Authorization": self.api_key}
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"Odds API error: {response.status_code} - {response.text}")
+                    return []
+                
+                data = response.json()
+                logger.info(f"Odds data received: {data}")
+                return data.get('data', [])
+                
+        except Exception as e:
+            logger.error(f"Error fetching betting odds: {str(e)}")
+            return []
+
+    def _parse_odds_data(self, odds_data: List[Dict]) -> Dict:
+        """Parse odds data to get spread and over/under."""
+        if not odds_data:
+            return {}
+        
+        parsed_odds = {
+            'spread': None,
+            'over_under': None
+        }
+        
+        for odds in odds_data:
+            if odds.get('type') == 'spread' and odds.get('live'):
+                parsed_odds['spread'] = odds.get('away_spread')
+            elif odds.get('type') == 'over/under' and odds.get('live'):
+                parsed_odds['over_under'] = odds.get('over_under')
+        
+        return parsed_odds
+
+    async def get_season_averages(self, player_ids: List[int]) -> List[Dict]:
+        """Fetch season averages for multiple players."""
+        if not player_ids:
+            return []
+
+        season_averages = []
+        
+        # Create tasks for each player
+        async with httpx.AsyncClient() as client:
+            tasks = []
+            for player_id in player_ids:
+                url = f"{self.base_url}/season_averages"
+                params = {
+                    'season': 2024,
+                    'player_id': player_id  # Changed from player_ids[] to player_id
+                }
+                tasks.append(
+                    client.get(url, headers={'Authorization': self.api_key}, params=params)
+                )
+            
+            # Execute all requests concurrently
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process responses
+            for response in responses:
+                try:
+                    if isinstance(response, Exception):
+                        logger.error(f"Error fetching season averages: {str(response)}")
+                        continue
+                        
+                    response.raise_for_status()
+                    data = response.json()
+                    if data.get('data'):
+                        season_averages.extend(data['data'])
+                except Exception as e:
+                    logger.error(f"Error processing season averages response: {str(e)}")
+                    continue
+
+        return season_averages
+
+    async def _generate_prediction(self, home_team: Dict, away_team: Dict, 
+                                 standings: Dict, home_injuries: List, away_injuries: List,
+                                 odds_data: List = None, home_stats: Dict = None, 
+                                 away_stats: Dict = None) -> str:
+        """Generate prediction using AI analysis of comprehensive team and player data."""
+        try:
+            # Get player IDs and stats
+            home_player_ids = [int(k) for k in home_stats.keys() if str(k).isdigit()] if home_stats else []
+            away_player_ids = [int(k) for k in away_stats.keys() if str(k).isdigit()] if away_stats else []
+            
+            # Get season averages
+            home_season_stats = await self.get_season_averages(home_player_ids)
+            away_season_stats = await self.get_season_averages(away_player_ids)
+
+            # Format team records
+            home_record = standings.get(home_team['id'], {})
+            away_record = standings.get(away_team['id'], {})
+
+            # Create detailed prompt with all available data
+            prompt = f"""Analyze this NBA matchup and provide a detailed prediction:
+
+Game: {away_team['full_name']} (Away) @ {home_team['full_name']} (Home)
+
+HOME TEAM ({home_team['full_name']}):
+Record: {home_record.get('wins', 0)}-{home_record.get('losses', 0)}
+Home Record: {home_record.get('home_record', '0-0')}
+Conference Rank: {home_record.get('conference_rank', 'N/A')}
+Last 10 Games: {home_record.get('last_ten', 'N/A')}
+Current Streak: {home_record.get('streak', 'N/A')}
+
+Key Players Stats:
+{self._format_season_stats(home_season_stats)}
+
+Injuries: {', '.join([inj.get('player', {}).get('full_name', '') for inj in home_injuries]) if home_injuries else 'None reported'}
+
+AWAY TEAM ({away_team['full_name']}):
+Record: {away_record.get('wins', 0)}-{away_record.get('losses', 0)}
+Road Record: {away_record.get('road_record', '0-0')}
+Conference Rank: {away_record.get('conference_rank', 'N/A')}
+Last 10 Games: {away_record.get('last_ten', 'N/A')}
+Current Streak: {away_record.get('streak', 'N/A')}
+
+Key Players Stats:
+{self._format_season_stats(away_season_stats)}
+
+Injuries: {', '.join([inj.get('player', {}).get('full_name', '') for inj in away_injuries]) if away_injuries else 'None reported'}
+
+Betting Lines:
+{self._format_betting_lines(odds_data) if odds_data else 'Not available'}
+
+Based on this comprehensive data, provide:
+1. A predicted winner with win probability
+2. A detailed analysis considering:
+   - Team records and current form
+   - Home/Away performance
+   - Key player matchups and their season averages
+   - Impact of injuries
+   - Conference standings impact
+   - Recent performance trends
+3. A confidence level (High/Medium/Low) with explanation
+
+Format your response exactly as:
+Winner: [Team] ([X]%)
+Analysis: [Your detailed analysis]
+Confidence: [Level] - [Brief explanation]"""
+
+            try:
+                # Get AI analysis
+                response = await self.openai_client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {
+                            "role": "system", 
+                            "content": "You are an expert NBA analyst. Provide detailed analysis based on current season data, team performance, and player statistics. Be specific and reference actual statistics in your analysis."
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7
+                )
+                
+                ai_analysis = response.choices[0].message.content
+                
+                # Validate AI response format
+                if not all(section in ai_analysis for section in ['Winner:', 'Analysis:', 'Confidence:']):
+                    logger.warning("AI response missing required sections")
+                    ai_analysis = self._generate_fallback_analysis(home_team, away_team, home_record, away_record)
+            
+            except Exception as e:
+                logger.error(f"Error getting AI analysis: {str(e)}")
+                ai_analysis = self._generate_fallback_analysis(home_team, away_team, home_record, away_record)
+
+            # Format the final prediction
+            matchup = f"NBA: {away_team['full_name']} (Away) @ {home_team['full_name']} (Home)"
+            return f"{matchup}\n\n{ai_analysis}"
+
+        except Exception as e:
+            logger.error(f"Error generating prediction: {str(e)}")
+            raise
+
+    def _generate_fallback_analysis(self, home_team: Dict, away_team: Dict, 
+                                  home_record: Dict, away_record: Dict) -> str:
+        """Generate a basic analysis when AI analysis fails."""
+        home_wins = home_record.get('wins', 0)
+        home_losses = home_record.get('losses', 0)
+        away_wins = away_record.get('wins', 0)
+        away_losses = away_record.get('losses', 0)
+        
+        home_win_pct = home_wins / (home_wins + home_losses) if (home_wins + home_losses) > 0 else 0.5
+        away_win_pct = away_wins / (away_wins + away_losses) if (away_wins + away_losses) > 0 else 0.5
+        
+        winner = home_team['full_name'] if home_win_pct >= away_win_pct else away_team['full_name']
+        probability = int(max(home_win_pct, away_win_pct) * 100)
+        
+        return (f"Winner: {winner} ({probability}%)\n"
+                f"Analysis: Based on current season records, {winner} has a better win percentage "
+                f"({home_win_pct:.3f} vs {away_win_pct:.3f}). "
+                f"Home team record: {home_wins}-{home_losses}, Away team record: {away_wins}-{away_losses}.\n"
+                f"Confidence: Medium - Based on win-loss records only")
+
+    def _format_season_stats(self, season_stats: List[Dict]) -> str:
+        """Format season averages for display."""
+        if not season_stats:
+            return "No season averages available"
+        
+        formatted_stats = []
+        for stat in season_stats:
+            if stat:  # Only format if we have stats
+                formatted_stats.append(
+                    f"- {stat.get('player_name', 'Unknown')}: "
+                    f"{stat.get('pts', 0):.1f} PPG, "
+                    f"{stat.get('reb', 0):.1f} RPG, "
+                    f"{stat.get('ast', 0):.1f} APG, "
+                    f"{stat.get('min', '0')} MPG, "
+                    f"FG%: {stat.get('fg_pct', 0):.1f}, "
+                    f"3P%: {stat.get('fg3_pct', 0):.1f}"
+                )
+        
+        return "\n".join(formatted_stats) if formatted_stats else "No season averages available"
+
+    def _format_betting_lines(self, odds_data: List[Dict]) -> str:
+        """Format betting lines for display."""
+        formatted_lines = []
+        for odds in odds_data:
+            if odds.get('type') == 'spread':
+                formatted_lines.append(f"{odds.get('away_team', {}).get('full_name')} {odds.get('away_spread')}")
+            elif odds.get('type') == 'over/under':
+                formatted_lines.append(f"O {odds.get('over_under')}")
+        
+        return "\n".join(formatted_lines) if formatted_lines else "No betting lines available"
+
+    async def parse_game_date(self, query: str) -> str:
+        """Parse date from query with timezone handling."""
+        try:
+            query_lower = query.lower()
+            
+            # Get current time in EST/ET (NBA's timezone)
+            est_tz = pytz.timezone('US/Eastern')
+            current_date = datetime.now(est_tz)
+            
+            # Handle relative dates
+            if 'tomorrow' in query_lower:
+                target_date = current_date + timedelta(days=1)
+            elif 'yesterday' in query_lower:
+                target_date = current_date - timedelta(days=1)
+            elif 'today' in query_lower or 'tonight' in query_lower:
+                target_date = current_date
+            else:
+                # Convert common date formats to standard format
+                # First, try to find date patterns in the query
+                date_pattern = r'(?i)(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|september|oct|october|nov|november|dec|december)\s+\d{1,2}'
+                match = re.search(date_pattern, query_lower)
+                
+                if match:
+                    date_str = match.group(0)
+                    # Try to parse the extracted date
+                    parsed_date = dateparser.parse(
+                        date_str,
+                        settings={
+                            'TIMEZONE': 'US/Eastern',
+                            'RETURN_AS_TIMEZONE_AWARE': True,
+                            'PREFER_DATES_FROM': 'future'
+                        }
+                    )
+                    if parsed_date:
+                        target_date = parsed_date
+                    else:
+                        raise ValueError(f"Could not parse date from: {date_str}")
+                else:
+                    # If no date pattern found, try parsing the entire query
+                    parsed_date = dateparser.parse(
+                        query_lower,
+                        settings={
+                            'TIMEZONE': 'US/Eastern',
+                            'RETURN_AS_TIMEZONE_AWARE': True,
+                            'PREFER_DATES_FROM': 'future'
+                        }
+                    )
+                    if parsed_date:
+                        target_date = parsed_date
+                    else:
+                        raise ValueError(f"Could not parse date from query: {query}")
+            
+            # Format the date in YYYY-MM-DD
+            return target_date.strftime('%Y-%m-%d')
+            
+        except Exception as e:
+            logger.error(f"Error parsing date from query: {str(e)}")
+            raise ValueError(f"Unable to determine game date from query. Please specify a date like 'Jan 29' or 'January 29'")
+
+    def _generate_parlay_prediction(self, predictions: List[Dict]) -> str:
+        """Generate a parlay prediction based on highest confidence picks."""
+        try:
+            # Filter predictions with high confidence
+            high_confidence_picks = []
+            
+            for pred in predictions:
+                # Extract win probability from prediction string
+                winner_line = [line for line in pred['prediction'].split('\n') if 'Winner:' in line][0]
+                prob_str = winner_line.split('(')[1].split('%')[0]
+                confidence_line = [line for line in pred['prediction'].split('\n') if 'Confidence:' in line][0]
+                confidence = confidence_line.split(': ')[1]
+                
+                # Get betting lines
+                betting_lines = pred['prediction'].split('Betting Lines:')[1].strip().split('\n') if 'Betting Lines:' in pred['prediction'] else []
+                
+                if confidence == "High" and float(prob_str) > 65:
+                    high_confidence_picks.append({
+                        'matchup': pred['matchup'],
+                        'winner': winner_line.split(': ')[1].split(' (')[0],
+                        'probability': float(prob_str),
+                        'betting_lines': betting_lines
+                    })
+
+            if not high_confidence_picks:
+                return "I don't have enough high-confidence picks to recommend a parlay today."
+
+            # Sort by probability
+            high_confidence_picks.sort(key=lambda x: x['probability'], reverse=True)
+            
+            # Take top 2-3 picks
+            parlay_picks = high_confidence_picks[:min(3, len(high_confidence_picks))]
+            
+            # Calculate combined probability
+            combined_prob = 100
+            for pick in parlay_picks:
+                combined_prob *= (pick['probability'] / 100)
+            
+            # Generate parlay prediction
+            parlay = "🎲 Recommended Parlay:\n\n"
+            for i, pick in enumerate(parlay_picks, 1):
+                parlay += f"{i}. {pick['winner']}"
+                # Add betting line if available
+                if pick['betting_lines']:
+                    spread_line = next((line for line in pick['betting_lines'] if pick['winner'] in line), '')
+                    if spread_line:
+                        parlay += f" ({spread_line.split(pick['winner'])[1].strip()})"
+                parlay += f" ({pick['probability']:.0f}% probability)\n"
+            
+            parlay += f"\nCombined Probability: {combined_prob:.1f}%\n"
+            parlay += "Note: This parlay combines our highest confidence picks based on team performance, injuries, and betting lines."
+            
+            return parlay
+            
+        except Exception as e:
+            logger.error(f"Error generating parlay: {str(e)}")
+            return "Sorry, I couldn't generate a parlay prediction at this time."
+
+    async def get_parlay_prediction(self, date: str) -> str:
+        """Get parlay prediction for games on a specific date."""
+        try:
+            games = await self.get_games(date)
+            if not games:
+                return f"No games found for {date}"
+
+            all_predictions = []
+            for game in games:
+                prediction_data = await self._generate_prediction(
+                    home_team=game['home_team'],
+                    away_team=game['visitor_team'],
+                    standings=await self.get_standings(),
+                    home_injuries=await self.get_team_injuries(game['home_team']['id']),
+                    away_injuries=await self.get_team_injuries(game['visitor_team']['id']),
+                    odds_data=await self.get_betting_odds(game_id=game['id']),
+                    home_stats=await self._get_team_leaders(game['home_team']['id'], 2024),
+                    away_stats=await self._get_team_leaders(game['visitor_team']['id'], 2024)
+                )
+                all_predictions.append(prediction_data)
+
+            return self._generate_parlay_prediction(all_predictions)
+
+        except Exception as e:
+            logger.error(f"Error getting parlay prediction: {str(e)}")
+            raise
+
+    async def analyze_matchup(self, game: Dict) -> Dict:
+        """Analyze NBA matchup with complete data."""
+        try:
+            home_team = game['home_team']
+            away_team = game['visitor_team']
+            
+            # Get all required data concurrently
+            tasks = [
+                self.get_team_injuries(home_team['id']),
+                self.get_team_injuries(away_team['id']),
+                self.get_standings(2024),
+                self.get_team_stats(home_team['id']),
+                self.get_team_stats(away_team['id'])
+            ]
+            
+            # Execute first batch of tasks
+            home_injuries, away_injuries, standings, home_team_stats, away_team_stats = await asyncio.gather(*tasks)
+            
+            # Get players for both teams
+            home_players = await self.get_team_players(home_team['id'])
+            away_players = await self.get_team_players(away_team['id'])
+            
+            # Get player IDs
+            home_player_ids = [p['id'] for p in home_players]
+            away_player_ids = [p['id'] for p in away_players]
+            
+            # Second batch of tasks for player-specific data
+            player_tasks = [
+                self.get_player_stats(home_player_ids),
+                self.get_player_stats(away_player_ids),
+                self.get_season_averages(home_player_ids),
+                self.get_season_averages(away_player_ids),
+                self.get_betting_odds(game['id'])
+            ]
+            
+            # Execute second batch of tasks
+            home_stats, away_stats, home_season_avgs, away_season_avgs, odds_data = await asyncio.gather(*player_tasks)
+
+            # Generate prediction with complete dataset
+            prediction = await self._generate_prediction(
+                home_team=home_team,
+                away_team=away_team,
+                standings=standings,
+                home_injuries=home_injuries,
+                away_injuries=away_injuries,
+                odds_data=odds_data,
+                home_stats=home_stats,
+                away_stats=away_stats,
+                home_season_avgs=home_season_avgs,
+                away_season_avgs=away_season_avgs,
+                home_team_stats=home_team_stats,
+                away_team_stats=away_team_stats
+            )
+
+            return {
+                "matchup": f"{away_team['full_name']} (Away) @ {home_team['full_name']} (Home)",
+                "prediction": prediction,
+                "data": {
+                    "teams": {
+                        "home": {
+                            "name": home_team['full_name'],
+                            "record": f"{standings.get(home_team['id'], {}).get('wins', 0)}-{standings.get(home_team['id'], {}).get('losses', 0)}",
+                            "home_record": standings.get(home_team['id'], {}).get('home_record'),
+                            "team_stats": home_team_stats,
+                            "injuries": home_injuries,
+                            "player_stats": home_stats,
+                            "season_averages": home_season_avgs
+                        },
+                        "away": {
+                            "name": away_team['full_name'],
+                            "record": f"{standings.get(away_team['id'], {}).get('wins', 0)}-{standings.get(away_team['id'], {}).get('losses', 0)}",
+                            "road_record": standings.get(away_team['id'], {}).get('road_record'),
+                            "team_stats": away_team_stats,
+                            "injuries": away_injuries,
+                            "player_stats": away_stats,
+                            "season_averages": away_season_avgs
+                        }
+                    },
+                    "odds": odds_data
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error in analyze_matchup: {str(e)}")
+            raise
+
+    async def get_team_stats(self, team_id: int) -> Dict:
+        """Fetch team statistics for the current season."""
+        url = f"{self.base_url}/teams/{team_id}/stats"
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url, 
+                    headers={'Authorization': self.api_key},
+                    params={'season': 2024}
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract relevant team stats
+                team_stats = data.get('data', {})
+                if team_stats:
+                    return {
+                        'ppg': team_stats.get('pts_per_game', 0),
+                        'rpg': team_stats.get('reb_per_game', 0),
+                        'apg': team_stats.get('ast_per_game', 0),
+                        'spg': team_stats.get('stl_per_game', 0),
+                        'bpg': team_stats.get('blk_per_game', 0),
+                        'fg_pct': team_stats.get('fg_pct', 0),
+                        'fg3_pct': team_stats.get('fg3_pct', 0),
+                        'ft_pct': team_stats.get('ft_pct', 0),
+                        'off_rtg': team_stats.get('off_rating', 0),
+                        'def_rtg': team_stats.get('def_rating', 0)
+                    }
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error fetching team stats for team {team_id}: {str(e)}")
+            return {}
+
+    async def get_team_players(self, team_id: int) -> List[Dict]:
+        """Fetch all players for a team."""
+        url = f"{self.base_url}/players"
+        params = {
+            'team_ids[]': team_id,
+            'per_page': 100,  # Get all players
+            'season': 2024
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers={'Authorization': self.api_key}, params=params)
+                response.raise_for_status()
+                data = response.json()
+                return data.get('data', [])
+        except Exception as e:
+            logger.error(f"Error fetching team players for team {team_id}: {str(e)}")
+            return []
+
+    async def get_player_stats(self, player_ids: List[int]) -> Dict[int, Dict]:
+        """Fetch stats for multiple players."""
+        if not player_ids:
+            return {}
+        
+        stats_dict = {}
+        for player_id in player_ids:
+            url = f"{self.base_url}/stats"
+            params = {
+                'player_ids[]': player_id,
+                'per_page': 100,
+                'seasons[]': 2024
+            }
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url, headers={'Authorization': self.api_key}, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                    if data.get('data'):
+                        # Get the most recent stats
+                        stats_dict[player_id] = data['data'][0]
+            except Exception as e:
+                logger.error(f"Error fetching stats for player {player_id}: {str(e)}")
+                continue
+            
+        return stats_dict
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        logger.error(f"Failed to store message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/nba_agent", response_model=AgentResponse)
+async def nba_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        logger.info(f"Received request: {request.query}")
+        
+        # Store user's message
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query,
+            data={"request_id": request.request_id}
+        )
+
+        predictor = NBAPredictor()
+        game_date = await predictor.parse_game_date(request.query)
+        logger.info(f"Parsed date for games: {game_date}")
+        
+        # Initialize response_data
+        response_data = {}
+        
+        # Check if user is asking for a parlay
+        if 'parlay' in request.query.lower():
+            agent_response = await predictor.get_parlay_prediction(game_date)
+            response_data = {
+                "date": game_date,
+                "type": "parlay",
+                "prediction": agent_response
+            }
+        else:
+            games = await predictor.get_games(game_date)
+            logger.info(f"Found {len(games)} games for {game_date}")
+            
+            if not games:
+                agent_response = f"I couldn't find any NBA games scheduled for {game_date}."
+                response_data = {
+                    "date": game_date,
+                    "games_count": 0
+                }
+            else:
+                # Process each game and await the results
+                all_predictions = []
+                for game in games:
+                    prediction_data = await predictor.analyze_matchup(game)
+                    all_predictions.append(prediction_data)
+
+                # Format the response
+                if len(all_predictions) == 1:
+                    agent_response = all_predictions[0]
+                else:
+                    agent_response = "\n\n".join(pred for pred in all_predictions)
+                
+                response_data = {
+                    "date": game_date,
+                    "games_count": len(games),
+                    "predictions": all_predictions
+                }
+
+        # Store AI's response with the awaited results
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=agent_response,
+            data={
+                "request_id": request.request_id,
+                **response_data
+            }
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    with open("templates/index.html") as f:
+        return HTMLResponse(content=f.read())
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="templates/index.html">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NBA Predictions Chatbot</title>
+    <style>
+        /* Core styles */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background-color: #1d428a;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .chat-messages {
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+        }
+
+        /* Message styles */
+        .message {
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            max-width: 90%;
+        }
+
+        .user-message {
+            background-color: #007AFF;
+            color: white;
+            margin-left: auto;
+        }
+
+        .bot-message {
+            background-color: #E9ECEF;
+            color: black;
+        }
+
+        /* Prediction card styles */
+        .prediction-card {
+            background-color: #f8f9fa;
+            border-left: 4px solid #1d428a;
+            padding: 8px;
+            margin: 8px 0;
+            border-radius: 6px;
+        }
+
+        .matchup {
+            font-weight: bold;
+            color: #1d428a;
+        }
+
+        .prediction-details {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .betting-lines {
+            margin-top: 4px;
+        }
+
+        /* Betting lines pills */
+        .spread-pill, .over-under-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin: 2px 4px;
+            background-color: #e9ecef;
+        }
+
+        .spread-pill {
+            color: #198754;
+            border: 1px solid #198754;
+        }
+
+        .over-under-pill {
+            color: #dc3545;
+            border: 1px solid #dc3545;
+        }
+
+        /* Input container */
+        .input-container {
+            padding: 20px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #1d428a;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        /* Loading indicator */
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #1d428a;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .typing-indicator {
+            background-color: #E9ECEF;
+            padding: 8px 12px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>🏀 NBA Predictions Bot</h1>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="message bot-message">
+                <div class="welcome-header">
+                    <img src="https://cdn.nba.com/logos/nba/nba-logoman-75-word_white.svg" alt="NBA Logo" class="nba-logo">
+                    <h2>Welcome to NBA Predictions!</h2>
+                </div>
+                <p class="intro-text">Hi! I'm your NBA predictions assistant. Ask me about any NBA games and I'll help you with predictions!</p>
+                
+                <div class="examples-container">
+                    <p class="examples-header">Here are some examples of what you can ask:</p>
+                    <ul class="examples-list">
+                        <li><span class="example-bullet">🏀</span> "What are the predictions for today's NBA games?"</li>
+                        <li><span class="example-bullet">🏀</span> "What are the predictions for tomorrow's games?"</li>
+                        <li><span class="example-bullet">🏀</span> "What are the predictions for the Celtics game today?"</li>
+                        <li><span class="example-bullet">🏀</span> "What are the predictions for the NBA games on Jan 27?"</li>
+                    </ul>
+                </div>
+                <style>
+                    .welcome-header {
+                        display: flex;
+                        align-items: center;
+                        margin-bottom: 15px;
+                        background: linear-gradient(135deg, #1d428a 0%, #c9082a 100%);
+                        padding: 15px;
+                        border-radius: 10px;
+                        color: white;
+                    }
+                    .nba-logo {
+                        height: 40px;
+                        margin-right: 15px;
+                    }
+                    .welcome-header h2 {
+                        margin: 0;
+                        font-size: 1.5em;
+                    }
+                    .intro-text {
+                        font-size: 1.1em;
+                        margin: 15px 0;
+                        color: #333;
+                        line-height: 1.4;
+                    }
+                    .examples-container {
+                        background-color: #f8f9fa;
+                        padding: 15px;
+                        border-radius: 10px;
+                        border-left: 4px solid #1d428a;
+                    }
+                    .examples-header {
+                        font-weight: bold;
+                        color: #1d428a;
+                        margin-bottom: 10px;
+                    }
+                    .examples-list {
+                        list-style: none;
+                        padding: 0;
+                        margin: 0;
+                    }
+                    .examples-list li {
+                        margin: 8px 0;
+                        padding-left: 25px;
+                        position: relative;
+                    }
+                    .example-bullet {
+                        position: absolute;
+                        left: 0;
+                        color: #c9082a;
+                    }
+                </style>
+            </div>
+        </div>
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="Type your message here..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin + '/api/nba_agent';
+        const API_TOKEN = 'test123'; 
+        const messagesContainer = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function formatPrediction(content) {
+            if (content.includes("🏀")) {
+                const predictions = content.split("🏀")
+                    .filter(p => p.trim())
+                    .filter(p => p.includes("Winner:"));
+                
+                let allPredictions = '';
+                
+                predictions.forEach(predictionPart => {
+                    const matchupPattern = /(.*?) \(Away\) @ (.*?) \(Home\)/;
+                    const matchupMatch = predictionPart.match(matchupPattern);
+                    const matchup = matchupMatch ? `🏀 ${matchupMatch[0]}` : '';
+
+                    if (matchup && predictionPart.includes("Winner:")) {
+                        const bettingLinesSection = predictionPart.split("Betting Lines:")[1] || '';
+                        const lines = bettingLinesSection.trim().split('\n');
+                        
+                        let spread = '';
+                        let overUnder = '';
+                        
+                        if (lines.length >= 2) {
+                            spread = lines[0].trim();
+                            overUnder = lines[1].trim();
+                        }
+
+                        allPredictions += `
+                            <div class="prediction-card">
+                                <div class="matchup">${matchup}</div>
+                                <div class="prediction-details">
+                                    <div class="winner"><strong>Winner:</strong> ${predictionPart.match(/Winner: (.*?)(?:\n|$)/)?.[1] || ''}</div>
+                                    <div class="analysis"><strong>Analysis:</strong> ${predictionPart.match(/Analysis: (.*?)(?:\n|$)/)?.[1] || ''}</div>
+                                    <div class="confidence"><strong>Confidence:</strong> ${predictionPart.match(/Confidence: (.*?)(?:\n|$)/)?.[1] || ''}</div>
+                                    ${bettingLinesSection ? `
+                                        <div class="betting-lines">
+                                            <div class="betting-header">Betting Lines:</div>
+                                            ${spread ? `<div class="spread-pill">${spread}</div>` : ''}
+                                            ${overUnder ? `<div class="over-under-pill">${overUnder}</div>` : ''}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }
+                });
+
+                return allPredictions || `<div class="regular-message">${content}</div>`;
+            }
+            return `<div class="regular-message">${content}</div>`;
+        }
+
+        function addMessage(content, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            messageDiv.innerHTML = isUser ? content : formatPrediction(content);
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showLoadingIndicator() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'typing-indicator';
+            loadingDiv.id = 'loading-indicator';
+            loadingDiv.innerHTML = `
+                <div class="loader"></div>
+                <span>Getting prediction...</span>
+            `;
+            messagesContainer.appendChild(loadingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function removeLoadingIndicator() {
+            const loadingDiv = document.getElementById('loading-indicator');
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
+        }
+
+        async function sendMessage() {
+            const userInput = document.getElementById('user-input').value;
+            if (!userInput.trim()) return;
+
+            addMessage(userInput, true);
+            userInput.value = '';
+            showLoadingIndicator();
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_TOKEN}`  // Make sure this matches exactly
+                    },
+                    body: JSON.stringify({
+                        query: userInput,
+                        user_id: 'test-user',
+                        request_id: Date.now().toString(),
+                        session_id: 'test-session'
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.detail || 'Unknown error'}`);
+                }
+
+                const data = await response.json();
+                console.log('Backend Response:', data);
+
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                const supabaseResponse = await fetch('https://hoggvadeoyewxentvxxe.supabase.co/rest/v1/messages?select=*&order=created_at.desc&limit=1', {
+                    headers: {
+                        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvZ2d2YWRlb3lld3hlbnR2eHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc3NjI2MzgsImV4cCI6MjA1MzMzODYzOH0.EHwCD4vtKlrytanLEfyUnJZOvvXCyj3RAsNRsS-BzMg',
+                        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvZ2d2YWRlb3lld3hlbnR2eHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc3NjI2MzgsImV4cCI6MjA1MzMzODYzOH0.EHwCD4vtKlrytanLEfyUnJZOvvXCyj3RAsNRsS-BzMg'
+                    }
+                });
+
+                const messages = await supabaseResponse.json();
+                console.log('Supabase Messages:', messages);
+
+                removeLoadingIndicator();
+
+                if (messages && messages.length > 0 && messages[0].message) {
+                    const aiMessage = messages[0].message.content;
+                    addMessage(aiMessage, false);
+                } else {
+                    addMessage("I'm sorry, I couldn't process your request at this time.", false);
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                removeLoadingIndicator();
+                addMessage('Sorry, I encountered an error processing your request.', false);
+            }
+        }
+    </script>
+</body>
+</html>
+</file>
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".gitignore">
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local development
+.DS_Store
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
+COPY . .
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+# Feel free to change sample_supabase_agent to sample_postgres_agent
+CMD ["sh", "-c", "uvicorn nba_agent:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="nba_agent.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
+import os
+import logging
+from openai import OpenAI
+import asyncio
+import requests
+from datetime import datetime, timedelta
+import dateparser
+import httpx
+import re
+from fastapi.responses import HTMLResponse
+import pytz
+
+# At the top of the file, after imports
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# After loading environment variables
+load_dotenv()
+
+# Check all required environment variables
+required_vars = [
+    "BALLDONTLIE_API_KEY",
+    "OPENAI_API_KEY",
+    "API_BEARER_TOKEN",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_KEY"
+]
+
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+logger.info("All required environment variables are set")
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+class NBAPredictor:
+    def __init__(self):
+        """Initialize the NBA predictor with API configuration"""
+        self.base_url = "https://api.balldontlie.io/v1"
+        self.api_key = os.getenv("BALLDONTLIE_API_KEY")
+        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    def _get_current_nba_season(self) -> int:
+        """
+        Get the NBA season based on the game date.
+        For the 2024-25 season, use 2024.
+        """
+        return 2024  # Hardcode to 2024 for now since that's what the API expects
+
+    async def _is_notable_player(self, player: Dict) -> bool:
+        """Determine if a player is notable based on various factors."""
+        try:
+            # Get player's season averages
+            season_stats = await self._get_season_averages(player['id'])
+            
+            if season_stats:
+                # Consider a player notable if they meet any of these criteria
+                return any([
+                    season_stats.get('pts', 0) >= 10,  # Scores 10+ PPG
+                    season_stats.get('reb', 0) >= 5,   # 5+ RPG
+                    season_stats.get('ast', 0) >= 4,   # 4+ APG
+                    season_stats.get('min', '0') >= '20'  # Plays 20+ minutes
+                ])
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error checking if player is notable: {str(e)}")
+            return False
+
+    async def _get_season_averages(self, player_id: int) -> Dict:
+        """Get player's season averages for the current season."""
+        current_season = 2024  # NBA season 2024-25
+        url = f"{self.base_url}/season_averages"
+        params = {
+            "season": current_season,
+            "player_ids[]": [player_id]  # API expects array of player IDs
+        }
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                return data['data'][0] if data.get('data') else {}
+        except Exception as e:
+            logger.error(f"Error fetching season averages: {str(e)}")
+            return {}
+
+    async def _get_advanced_stats(self, player_id: int, season: int) -> Dict:
+        """Get player's advanced stats."""
+        url = f"{self.base_url}/stats/advanced"
+        params = {
+            "player_ids[]": [player_id],
+            "seasons[]": [season],
+            "per_page": 100
+        }
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching advanced stats: {str(e)}")
+            return {}
+
+    async def _get_team_standings(self, player_id: int) -> Dict:
+        """Get current team standings."""
+        url = f"{self.base_url}/standings"
+        params = {"season": 2024}
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Convert list to dictionary with team_id as key
+                standings_dict = {}
+                for team in data.get('data', []):
+                    if team['team']['id'] == player_id:
+                        standings_dict[player_id] = {
+                            'wins': team.get('wins', 0),
+                            'losses': team.get('losses', 0),
+                            'conference': team.get('conference', 'N/A'),
+                            'conference_rank': team.get('conference_rank', 'N/A'),
+                            'home_record': f"{team.get('home_wins', 0)}-{team.get('home_losses', 0)}",
+                            'road_record': f"{team.get('road_wins', 0)}-{team.get('road_losses', 0)}",
+                            'last_ten': f"{team.get('last_ten_wins', 0)}-{team.get('last_ten_losses', 0)}",
+                            'streak': f"{'W' if team.get('streak_type') == 'win' else 'L'}{team.get('streak', 0)}"
+                        }
+                return standings_dict
+                
+        except Exception as e:
+            logger.error(f"Error fetching standings: {str(e)}")
+            return {}
+
+    async def _get_team_leaders(self, team_id: int, season: int) -> Dict:
+        """Get team statistical leaders."""
+        url = f"{self.base_url}/leaders"
+        stats = ['pts', 'reb', 'ast', 'stl', 'blk']
+        leaders = {}
+        
+        for stat in stats:
+            params = {
+                "season": season,
+                "stat_type": stat
+            }
+            headers = {"Authorization": self.api_key}
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url, params=params, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    # Filter for team's leaders
+                    team_leaders = [p for p in data['data'] if p['player']['team_id'] == team_id]
+                    if team_leaders:
+                        leaders[stat] = team_leaders[0]
+            except Exception as e:
+                logger.error(f"Error fetching {stat} leaders: {str(e)}")
+        
+        return leaders
+
+    async def get_games(self, date: str) -> List[Dict]:
+        """Fetch games for a specific date"""
+        logger.info(f"Fetching games for date: {date}")
+        url = f"{self.base_url}/games"
+        headers = {'Authorization': self.api_key}
+        params = {'dates[]': date}
+        
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            games = response.json()['data']
+            logger.info(f"Found {len(games)} games for {date}")
+            return games
+        except Exception as e:
+            logger.error(f"Error fetching games: {str(e)}")
+            raise
+
+    async def get_team_injuries(self, team_id: int) -> List[Dict]:
+        """Fetch current injuries for a team"""
+        url = f"{self.base_url}/player_injuries"
+        headers = {'Authorization': self.api_key}
+        params = {'team_ids[]': [team_id]}
+        
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()['data']
+        except Exception as e:
+            logger.error(f"Error fetching injuries: {str(e)}")
+            return []
+
+    async def get_standings(self, season: int = 2024) -> Dict:
+        """Get current standings."""
+        url = f"{self.base_url}/standings"
+        params = {"season": season}
+        headers = {"Authorization": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Convert list to dictionary with team_id as key
+                standings_dict = {}
+                for team in data.get('data', []):
+                    standings_dict[team['team']['id']] = {
+                        'wins': team.get('wins', 0),
+                        'losses': team.get('losses', 0),
+                        'conference': team.get('conference', 'N/A'),
+                        'conference_rank': team.get('conference_rank', 'N/A'),
+                        'home_record': f"{team.get('home_wins', 0)}-{team.get('home_losses', 0)}",
+                        'road_record': f"{team.get('road_wins', 0)}-{team.get('road_losses', 0)}",
+                        'last_ten': f"{team.get('last_ten_wins', 0)}-{team.get('last_ten_losses', 0)}",
+                        'streak': f"{'W' if team.get('streak_type') == 'win' else 'L'}{team.get('streak', 0)}"
+                    }
+                return standings_dict
+                
+        except Exception as e:
+            logger.error(f"Error fetching standings: {str(e)}")
+            return {}
+
+    async def get_betting_odds(self, game_id: int = None, game_date: str = None) -> List[Dict]:
+        """Fetch betting odds for a game"""
+        try:
+            async with httpx.AsyncClient() as client:
+                url = "https://api.balldontlie.io/v1/odds"
+                params = {}
+                if game_id:
+                    params['game_id'] = game_id
+                if game_date:
+                    params['date'] = game_date
+                    
+                response = await client.get(
+                    url,
+                    params=params,
+                    headers={"Authorization": self.api_key}
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"Odds API error: {response.status_code} - {response.text}")
+                    return []
+                
+                data = response.json()
+                logger.info(f"Odds data received: {data}")
+                return data.get('data', [])
+                
+        except Exception as e:
+            logger.error(f"Error fetching betting odds: {str(e)}")
+            return []
+
+    def _parse_odds_data(self, odds_data: List[Dict]) -> Dict:
+        """Parse odds data to get spread and over/under."""
+        if not odds_data:
+            return {}
+        
+        parsed_odds = {
+            'spread': None,
+            'over_under': None
+        }
+        
+        for odds in odds_data:
+            if odds.get('type') == 'spread' and odds.get('live'):
+                parsed_odds['spread'] = odds.get('away_spread')
+            elif odds.get('type') == 'over/under' and odds.get('live'):
+                parsed_odds['over_under'] = odds.get('over_under')
+        
+        return parsed_odds
+
+    async def _generate_prediction(self, home_team: Dict, away_team: Dict, 
+                                 standings: Dict, home_injuries: List, away_injuries: List,
+                                 odds_data: List = None) -> str:
+        """Generate prediction with consistent format."""
+        try:
+            # Analysis prompt for more detailed but focused analysis
+            analysis_prompt = f"""
+            Analyze this NBA matchup between {away_team['full_name']} and {home_team['full_name']}. 
+            Consider their records, injuries, and recent performance.
+
+            Provide your response in exactly this format:
+            Winner: [Team Name] ([Win Probability]%)
+            Analysis: 3-4 sentences analyzing key factors including records, matchup advantages, and injury impact
+            Confidence: High/Medium/Low
+
+            Current records:
+            {away_team['full_name']}: {standings.get(away_team['id'], {}).get('wins', 0)}-{standings.get(away_team['id'], {}).get('losses', 0)}
+            {home_team['full_name']}: {standings.get(home_team['id'], {}).get('wins', 0)}-{standings.get(home_team['id'], {}).get('losses', 0)}
+            Injuries: {home_team['full_name']} ({len(home_injuries)} players out), {away_team['full_name']} ({len(away_injuries)} players out)
+            """
+
+            response = await asyncio.to_thread(
+                self.openai_client.chat.completions.create,
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": "You are an expert NBA analyst. Provide predictions in the exact format requested."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=200
+            )
+            
+            ai_analysis = response.choices[0].message.content.strip()
+            
+            # Format the prediction
+            prediction = f"🏀 {away_team['full_name']} (Away) @ {home_team['full_name']} (Home)\n\n"
+            
+            # Split the AI response into components
+            lines = ai_analysis.split('\n')
+            winner_line = next((line for line in lines if line.startswith('Winner:')), '')
+            analysis_line = next((line for line in lines if line.startswith('Analysis:')), '')
+            confidence_line = next((line for line in lines if line.startswith('Confidence:')), '')
+            
+            prediction += f"{winner_line}\n"
+            prediction += f"{analysis_line}\n"
+            prediction += f"{confidence_line}\n"
+            
+            # Format betting lines
+            betting_lines = "\nBetting Lines:"  # Note: only one newline here
+            if odds_data:
+                latest_spread = None
+                latest_over_under = None
+                
+                for odds in odds_data:
+                    if not odds:
+                        continue
+                    
+                    if odds.get('type') == 'spread':
+                        if not latest_spread or odds.get('last_update', '') > latest_spread.get('last_update', ''):
+                            latest_spread = odds
+                    elif odds.get('type') == 'over/under':
+                        if not latest_over_under or odds.get('last_update', '') > latest_over_under.get('last_update', ''):
+                            latest_over_under = odds
+
+                if latest_spread:
+                    try:
+                        away_spread = latest_spread.get('away_spread')
+                        if away_spread is not None:
+                            betting_lines += f"\n{away_team['full_name']} {away_spread}"
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"Error processing spread: {str(e)}")
+
+                if latest_over_under:
+                    try:
+                        total = latest_over_under.get('over_under')
+                        if total is not None:
+                            betting_lines += f"\nO {total}"
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"Error processing over/under: {str(e)}")
+            
+            prediction += betting_lines
+            
+            return prediction
+
+        except Exception as e:
+            logger.error(f"Error generating prediction: {str(e)}")
+            raise
+
+    def _analyze_over_under(self, total: float, home_team: Dict, away_team: Dict, standings: Dict) -> str:
+        """Analyze over/under based on team statistics"""
+        try:
+            home_stats = standings.get(home_team['id'], {})
+            away_stats = standings.get(away_team['id'], {})
+            
+            # Simple analysis based on team scoring averages
+            home_avg_points = home_stats.get('points_per_game', 0)
+            away_avg_points = away_stats.get('points_per_game', 0)
+            combined_avg = home_avg_points + away_avg_points
+            
+            if combined_avg > total:
+                return f"Prediction: OVER {total}\nReasoning: Teams combine for {combined_avg:.1f} points per game on average"
+            else:
+                return f"Prediction: UNDER {total}\nReasoning: Teams combine for {combined_avg:.1f} points per game on average"
+        except Exception:
+            return "Unable to analyze over/under"
+
+    async def analyze_matchup(self, game: Dict) -> Dict:
+        """Analyze a matchup and generate prediction."""
+        try:
+            # Get current season
+            current_season = self._get_current_nba_season()
+            
+            # Get additional data needed for analysis
+            home_injuries = await self.get_team_injuries(game['home_team']['id'])
+            away_injuries = await self.get_team_injuries(game['visitor_team']['id'])
+            standings = await self.get_standings(current_season)
+            
+            # Get odds data for the game
+            odds_data = await self.get_betting_odds(game_id=game['id'])
+            
+            # Generate prediction
+            prediction = await self._generate_prediction(
+                game['home_team'],
+                game['visitor_team'],
+                standings,
+                home_injuries,
+                away_injuries,
+                odds_data
+            )
+            
+            return {
+                "matchup": f"{game['visitor_team']['full_name']} @ {game['home_team']['full_name']}",
+                "prediction": prediction,
+                "data": {
+                    "home_team": game['home_team'],
+                    "away_team": game['visitor_team'],
+                    "standings": standings,
+                    "injuries": {
+                        "home": home_injuries,
+                        "away": away_injuries
+                    },
+                    "odds": odds_data
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error in analyze_matchup: {str(e)}")
+            raise
+
+    async def parse_game_date(self, query: str) -> str:
+        """Parse date from query with timezone handling."""
+        try:
+            query_lower = query.lower()
+            
+            # Get current time in EST/ET (NBA's timezone)
+            est_tz = pytz.timezone('US/Eastern')
+            current_date = datetime.now(est_tz)
+            
+            # Handle relative dates
+            if 'tomorrow' in query_lower:
+                target_date = current_date + timedelta(days=1)
+            elif 'yesterday' in query_lower:
+                target_date = current_date - timedelta(days=1)
+            elif 'today' in query_lower or 'tonight' in query_lower:
+                target_date = current_date
+            else:
+                # Convert common date formats to standard format
+                # First, try to find date patterns in the query
+                date_pattern = r'(?i)(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|september|oct|october|nov|november|dec|december)\s+\d{1,2}'
+                match = re.search(date_pattern, query_lower)
+                
+                if match:
+                    date_str = match.group(0)
+                    # Try to parse the extracted date
+                    parsed_date = dateparser.parse(
+                        date_str,
+                        settings={
+                            'TIMEZONE': 'US/Eastern',
+                            'RETURN_AS_TIMEZONE_AWARE': True,
+                            'PREFER_DATES_FROM': 'future'
+                        }
+                    )
+                    if parsed_date:
+                        target_date = parsed_date
+                    else:
+                        raise ValueError(f"Could not parse date from: {date_str}")
+                else:
+                    # If no date pattern found, try parsing the entire query
+                    parsed_date = dateparser.parse(
+                        query_lower,
+                        settings={
+                            'TIMEZONE': 'US/Eastern',
+                            'RETURN_AS_TIMEZONE_AWARE': True,
+                            'PREFER_DATES_FROM': 'future'
+                        }
+                    )
+                    if parsed_date:
+                        target_date = parsed_date
+                    else:
+                        raise ValueError(f"Could not parse date from query: {query}")
+            
+            # Format the date in YYYY-MM-DD
+            return target_date.strftime('%Y-%m-%d')
+            
+        except Exception as e:
+            logger.error(f"Error parsing date from query: {str(e)}")
+            raise ValueError(f"Unable to determine game date from query. Please specify a date like 'Jan 29' or 'January 29'")
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        logger.error(f"Failed to store message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/nba_agent", response_model=AgentResponse)
+async def nba_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        logger.info(f"Received request: {request.query}")
+        
+        # Store user's message first
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query,
+            data={"request_id": request.request_id}
+        )
+
+        predictor = NBAPredictor()
+        try:
+            game_date = await predictor.parse_game_date(request.query)
+        except ValueError as e:
+            # Handle date parsing error
+            agent_response = str(e)
+            await store_message(
+                session_id=request.session_id,
+                message_type="ai",
+                content=agent_response,
+                data={"request_id": request.request_id}
+            )
+            return AgentResponse(success=True)
+
+        logger.info(f"Parsed date for games: {game_date}")
+        
+        games = await predictor.get_games(game_date)
+        logger.info(f"Found {len(games)} games for {game_date}")
+        
+        if not games:
+            agent_response = f"I couldn't find any NBA games scheduled for {game_date}."
+            response_data = None
+        else:
+            # Check if query is about a specific team
+            query_lower = request.query.lower()
+            team_specific_games = []
+            
+            # List of team names and their common variations
+            team_names = {
+                "celtics": ["boston", "celtics"],
+                "nets": ["brooklyn", "nets"],
+                "knicks": ["new york", "ny", "knicks"],
+                "sixers": ["philadelphia", "philly", "76ers", "sixers"],
+                "raptors": ["toronto", "raptors"],
+                "bulls": ["chicago", "bulls"],
+                "cavaliers": ["cleveland", "cavs", "cavaliers"],
+                "pistons": ["detroit", "pistons"],
+                "pacers": ["indiana", "pacers"],
+                "bucks": ["milwaukee", "bucks"],
+                "hawks": ["atlanta", "hawks"],
+                "hornets": ["charlotte", "hornets"],
+                "heat": ["miami", "heat"],
+                "magic": ["orlando", "magic"],
+                "wizards": ["washington", "wizards"],
+                "nuggets": ["denver", "nuggets"],
+                "timberwolves": ["minnesota", "wolves", "timberwolves"],
+                "thunder": ["oklahoma", "okc", "thunder"],
+                "blazers": ["portland", "blazers", "trail blazers"],
+                "jazz": ["utah", "jazz"],
+                "warriors": ["golden state", "gsw", "warriors"],
+                "clippers": ["la clippers", "lac", "clippers"],
+                "lakers": ["la lakers", "lal", "lakers"],
+                "suns": ["phoenix", "suns"],
+                "kings": ["sacramento", "kings"],
+                "mavericks": ["dallas", "mavs", "mavericks"],
+                "rockets": ["houston", "rockets"],
+                "grizzlies": ["memphis", "grizzlies"],
+                "pelicans": ["new orleans", "pels", "pelicans"],
+                "spurs": ["san antonio", "spurs"]
+            }
+            
+            # Check if query contains any team names
+            requested_team = None
+            for team, variations in team_names.items():
+                if any(variation in query_lower for variation in variations):
+                    requested_team = team
+                    break
+            
+            if requested_team:
+                # Filter games for the requested team
+                team_specific_games = [
+                    game for game in games 
+                    if any(variation in game['home_team']['full_name'].lower() for variation in team_names[requested_team])
+                    or any(variation in game['visitor_team']['full_name'].lower() for variation in team_names[requested_team])
+                ]
+                games = team_specific_games
+            
+            # Analyze filtered games
+            all_predictions = []
+            for game in games:
+                prediction_data = await predictor.analyze_matchup(game)
+                all_predictions.append({
+                    "matchup": prediction_data["matchup"],
+                    "prediction": prediction_data["prediction"],
+                    "stats": prediction_data["data"]
+                })
+            
+            # Create appropriate response based on query type
+            if requested_team and not team_specific_games:
+                agent_response = f"I couldn't find any games scheduled for {requested_team.title()} on {game_date}."
+            elif requested_team:
+                agent_response = f"Here's my prediction for the {requested_team.title()} game on {game_date}:\n\n"
+                for pred in all_predictions:
+                    agent_response += f"🏀 {pred['matchup']}\n"
+                    agent_response += f"{pred['prediction']}\n\n"
+            else:
+                agent_response = f"I found {len(games)} games scheduled for {game_date}. Here are my predictions:\n\n"
+                for pred in all_predictions:
+                    agent_response += f"🏀 {pred['matchup']}\n"
+                    agent_response += f"{pred['prediction']}\n\n"
+            
+            response_data = {
+                "date": game_date,
+                "games_count": len(games),
+                "predictions": all_predictions,
+                "team_specific": requested_team is not None
+            }
+
+        # Store AI's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=agent_response,
+            data={
+                "request_id": request.request_id,
+                **(response_data or {})
+            }
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    with open("templates/index.html") as f:
+        return HTMLResponse(content=f.read())
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="Procfile">
+web: uvicorn nba_agent:app --host 0.0.0.0 --port $PORT
+</file>
+
+<file path="README.md">
+# NBA Predictions Bot
+
+Author: [Elo Mukoro](https://nbaagent-production.up.railway.app/)
+
+An AI-powered NBA predictions and betting insights bot that provides game predictions, betting odds, and analysis. Designed to help users make data-driven decisions, it evaluates upcoming matchups, potential outcomes, and relevant statistics, offering valuable insights for sports betting enthusiasts.
+
+## Features
+- Real-time NBA game predictions
+- Betting odds and analysis
+- Team-specific insights
+- Historical game data analysis
+- Interactive web interface
+
+## Tech Stack
+- Backend: FastAPI, Python
+- Frontend: HTML, CSS, JavaScript
+- Database: Supabase
+- APIs: BallDontLie API, OpenAI API
+
+## Setup
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Set up environment variables in `.env`:
+   - BALLDONTLIE_API_KEY
+   - OPENAI_API_KEY
+   - API_BEARER_TOKEN
+   - SUPABASE_URL
+   - SUPABASE_SERVICE_KEY
+
+4. Run the application:
+```python
+uvicorn nba_agent:app --reload
+```
+
+## Usage
+Visit `http://localhost:8001` in your browser to interact with the bot.
+
+## API Endpoints
+- POST `/api/nba_agent`: Main prediction endpoint
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+aiofiles==0.6.0
+Jinja2==2.11.3
+MarkupSafe==1.1.1
+fastapi>=0.68.0,<0.69.0
+uvicorn>=0.15.0,<0.16.0
+python-dotenv>=0.19.0
+supabase>=1.0.3
+openai>=1.3.0
+httpx>=0.24.0
+dateparser>=1.1.8
+requests>=2.31.0
+pydantic>=1.10.0,<2.0.0
+python-multipart>=0.0.6
+typing-extensions>=4.5.0
+python-telegram-bot>=20.0
+</file>
+
+</files>

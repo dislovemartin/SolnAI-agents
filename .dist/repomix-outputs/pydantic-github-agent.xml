@@ -1,0 +1,1059 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+studio-integration-version/
+  .dockerignore
+  .env.example
+  Dockerfile
+  github_agent_endpoint.py
+  github_agent.py
+.dockerignore
+.env.example
+cli.py
+Dockerfile
+github_agent_endpoint.py
+github_agent.py
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="studio-integration-version/.dockerignore">
+__pycache__
+venv
+</file>
+
+<file path="studio-integration-version/.env.example">
+# Get your SUPABASE URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+
+# Get your Open Router API Key here after registering:
+# https://openrouter.ai/settings/keys
+OPEN_ROUTER_API_KEY=
+
+# The LLM you want to use from OpenRouter. See the list of models here:
+# https://openrouter.ai/models
+# Example: deepseek/deepseek-chat 
+LLM_MODEL=
+
+# This this personal GitHub access token by following these instructions -
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+GITHUB_TOKEN=
+</file>
+
+<file path="studio-integration-version/Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Install the Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+CMD ["sh", "-c", "uvicorn github_agent_endpoint:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="studio-integration-version/github_agent_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import httpx
+import sys
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+from github_agent import github_agent, GitHubDeps
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/pydantic-github-agent", response_model=AgentResponse)
+async def github_agent_endpoint(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=msg_content)])
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        # Initialize agent dependencies
+        async with httpx.AsyncClient() as client:
+            deps = GitHubDeps(
+                client=client,
+                github_token=os.getenv("GITHUB_TOKEN")
+            )
+
+            # Run the agent with conversation history
+            result = await github_agent.run(
+                request.query,
+                message_history=messages,
+                deps=deps
+            )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=result.data,
+            data={"request_id": request.request_id}
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing agent request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="studio-integration-version/github_agent.py">
+from __future__ import annotations as _annotations
+
+import asyncio
+import os
+from dataclasses import dataclass
+from typing import Any, List, Dict
+import tempfile
+from pathlib import Path
+from dotenv import load_dotenv
+import logfire
+import shutil
+import time
+import re
+import json
+
+import httpx
+from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.models.openai import OpenAIModel
+from devtools import debug
+
+load_dotenv()
+
+llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
+model = OpenAIModel(
+    llm#,
+    # base_url = 'https://openrouter.ai/api/v1',
+    # api_key=os.getenv('OPEN_ROUTER_API_KEY')
+)
+
+logfire.configure(send_to_logfire='if-token-present')
+
+@dataclass
+class GitHubDeps:
+    client: httpx.AsyncClient
+    github_token: str | None = None
+
+system_prompt = """
+You are a coding expert with access to GitHub to help the user manage their repository and get information from it.
+
+Your only job is to assist with this and you don't answer other questions besides describing what you are able to do.
+
+Don't ask the user before taking an action, just do it. Always make sure you look at the repository with the provided tools before answering the user's question unless you have already.
+
+When answering a question about the repo, always start your answer with the full repo URL in brackets and then give your answer on a newline. Like:
+
+[Using https://github.com/[repo URL from the user]]
+
+Your answer here...
+"""
+
+github_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    deps_type=GitHubDeps,
+    retries=2
+)
+
+@github_agent.tool
+async def get_repo_info(ctx: RunContext[GitHubDeps], github_url: str) -> str:
+    """Get repository information including size and description using GitHub API.
+
+    Args:
+        ctx: The context.
+        github_url: The GitHub repository URL.
+
+    Returns:
+        str: Repository information as a formatted string.
+    """
+    match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', github_url)
+    if not match:
+        return "Invalid GitHub URL format"
+    
+    owner, repo = match.groups()
+    headers = {'Authorization': f'token {ctx.deps.github_token}'} if ctx.deps.github_token else {}
+    
+    response = await ctx.deps.client.get(
+        f'https://api.github.com/repos/{owner}/{repo}',
+        headers=headers
+    )
+    
+    if response.status_code != 200:
+        return f"Failed to get repository info: {response.text}"
+    
+    data = response.json()
+    size_mb = data['size'] / 1024
+    
+    return (
+        f"Repository: {data['full_name']}\n"
+        f"Description: {data['description']}\n"
+        f"Size: {size_mb:.1f}MB\n"
+        f"Stars: {data['stargazers_count']}\n"
+        f"Language: {data['language']}\n"
+        f"Created: {data['created_at']}\n"
+        f"Last Updated: {data['updated_at']}"
+    )
+
+@github_agent.tool
+async def get_repo_structure(ctx: RunContext[GitHubDeps], github_url: str) -> str:
+    """Get the directory structure of a GitHub repository.
+
+    Args:
+        ctx: The context.
+        github_url: The GitHub repository URL.
+
+    Returns:
+        str: Directory structure as a formatted string.
+    """
+    match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', github_url)
+    if not match:
+        return "Invalid GitHub URL format"
+    
+    owner, repo = match.groups()
+    headers = {'Authorization': f'token {ctx.deps.github_token}'} if ctx.deps.github_token else {}
+    
+    response = await ctx.deps.client.get(
+        f'https://api.github.com/repos/{owner}/{repo}/git/trees/main?recursive=1',
+        headers=headers
+    )
+    
+    if response.status_code != 200:
+        # Try with master branch if main fails
+        response = await ctx.deps.client.get(
+            f'https://api.github.com/repos/{owner}/{repo}/git/trees/master?recursive=1',
+            headers=headers
+        )
+        if response.status_code != 200:
+            return f"Failed to get repository structure: {response.text}"
+    
+    data = response.json()
+    tree = data['tree']
+    
+    # Build directory structure
+    structure = []
+    for item in tree:
+        if not any(excluded in item['path'] for excluded in ['.git/', 'node_modules/', '__pycache__/']):
+            structure.append(f"{'📁 ' if item['type'] == 'tree' else '📄 '}{item['path']}")
+    
+    return "\n".join(structure)
+
+@github_agent.tool
+async def get_file_content(ctx: RunContext[GitHubDeps], github_url: str, file_path: str) -> str:
+    """Get the content of a specific file from the GitHub repository.
+
+    Args:
+        ctx: The context.
+        github_url: The GitHub repository URL.
+        file_path: Path to the file within the repository.
+
+    Returns:
+        str: File content as a string.
+    """
+    match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', github_url)
+    if not match:
+        return "Invalid GitHub URL format"
+    
+    owner, repo = match.groups()
+    headers = {'Authorization': f'token {ctx.deps.github_token}'} if ctx.deps.github_token else {}
+    
+    response = await ctx.deps.client.get(
+        f'https://raw.githubusercontent.com/{owner}/{repo}/main/{file_path}',
+        headers=headers
+    )
+    
+    if response.status_code != 200:
+        # Try with master branch if main fails
+        response = await ctx.deps.client.get(
+            f'https://raw.githubusercontent.com/{owner}/{repo}/master/{file_path}',
+            headers=headers
+        )
+        if response.status_code != 200:
+            return f"Failed to get file content: {response.text}"
+    
+    return response.text
+</file>
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".env.example">
+# Get your Open Router API Key here after registering:
+# https://openrouter.ai/settings/keys
+OPEN_ROUTER_API_KEY=
+
+# The LLM you want to use from OpenRouter. See the list of models here:
+# https://openrouter.ai/models
+# Example: deepseek/deepseek-chat 
+LLM_MODEL=
+
+# This this personal GitHub access token by following these instructions -
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+GITHUB_TOKEN=
+
+# No need to set the below environment variables if just using cli.py!
+
+# Get your SUPABASE URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+</file>
+
+<file path="cli.py">
+from __future__ import annotations
+from dotenv import load_dotenv
+from typing import List
+import asyncio
+import logfire
+import httpx
+import os
+
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from github_agent import github_agent, GitHubDeps
+
+# Load environment variables
+load_dotenv()
+
+# Configure logfire to suppress warnings
+logfire.configure(send_to_logfire='never')
+
+class CLI:
+    def __init__(self):
+        self.messages: List[ModelMessage] = []
+        self.deps = GitHubDeps(
+            client=httpx.AsyncClient(),
+            github_token=os.getenv('GITHUB_TOKEN'),
+        )
+
+    async def chat(self):
+        print("GitHub Agent CLI (type 'quit' to exit)")
+        print("Enter your message:")
+        
+        try:
+            while True:
+                user_input = input("> ").strip()
+                if user_input.lower() == 'quit':
+                    break
+
+                # Run the agent with streaming
+                result = await github_agent.run(
+                    user_input,
+                    deps=self.deps,
+                    message_history=self.messages
+                )
+
+                # Store the user message
+                self.messages.append(
+                    ModelRequest(parts=[UserPromptPart(content=user_input)])
+                )
+
+                # Store itermediatry messages like tool calls and responses
+                filtered_messages = [msg for msg in result.new_messages() 
+                                if not (hasattr(msg, 'parts') and 
+                                        any(part.part_kind == 'user-prompt' or part.part_kind == 'text' for part in msg.parts))]
+                self.messages.extend(filtered_messages)
+
+                # Optional if you want to print out tool calls and responses
+                # print(filtered_messages + "\n\n")
+
+                print(result.data)
+
+                # Add the final response from the agent
+                self.messages.append(
+                    ModelResponse(parts=[TextPart(content=result.data)])
+                )
+        finally:
+            await self.deps.client.aclose()
+
+async def main():
+    cli = CLI()
+    await cli.chat()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="Dockerfile">
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application
+COPY . .
+
+# Expose the port the app runs on
+EXPOSE 8001
+
+# Command to run the application
+CMD ["python", "github_agent_endpoint.py"]
+</file>
+
+<file path="github_agent_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import httpx
+import sys
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+# Add parent directory to Python path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from github_agent import github_agent, GitHubDeps
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/pydantic-github-agent", response_model=AgentResponse)
+async def github_agent_endpoint(
+    request: AgentRequest#,
+    #authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=msg_content)])
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        # Initialize agent dependencies
+        async with httpx.AsyncClient() as client:
+            deps = GitHubDeps(
+                client=client,
+                github_token=os.getenv("GITHUB_TOKEN")
+            )
+
+            # Run the agent with conversation history
+            result = await github_agent.run(
+                request.query,
+                message_history=messages,
+                deps=deps
+            )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=result.data,
+            data={"request_id": request.request_id}
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing agent request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="github_agent.py">
+from __future__ import annotations as _annotations
+
+import asyncio
+import os
+from dataclasses import dataclass
+from typing import Any, List, Dict
+import tempfile
+from pathlib import Path
+from dotenv import load_dotenv
+import shutil
+import time
+import re
+import json
+
+import httpx
+import logfire
+from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.models.openai import OpenAIModel
+from devtools import debug
+
+load_dotenv()
+
+llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
+model = OpenAIModel(
+    llm,
+    base_url = 'https://openrouter.ai/api/v1',
+    api_key=os.getenv('OPEN_ROUTER_API_KEY')
+) if os.getenv('OPEN_ROUTER_API_KEY', None) else OpenAIModel(llm)
+
+logfire.configure(send_to_logfire='if-token-present')
+
+@dataclass
+class GitHubDeps:
+    client: httpx.AsyncClient
+    github_token: str | None = None
+
+system_prompt = """
+You are a coding expert with access to GitHub to help the user manage their repository and get information from it.
+
+Your only job is to assist with this and you don't answer other questions besides describing what you are able to do.
+
+Don't ask the user before taking an action, just do it. Always make sure you look at the repository with the provided tools before answering the user's question unless you have already.
+
+When answering a question about the repo, always start your answer with the full repo URL in brackets and then give your answer on a newline. Like:
+
+[Using https://github.com/[repo URL from the user]]
+
+Your answer here...
+"""
+
+github_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    deps_type=GitHubDeps,
+    retries=2
+)
+
+@github_agent.tool
+async def get_repo_info(ctx: RunContext[GitHubDeps], github_url: str) -> str:
+    """Get repository information including size and description using GitHub API.
+
+    Args:
+        ctx: The context.
+        github_url: The GitHub repository URL.
+
+    Returns:
+        str: Repository information as a formatted string.
+    """
+    match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', github_url)
+    if not match:
+        return "Invalid GitHub URL format"
+    
+    owner, repo = match.groups()
+    headers = {'Authorization': f'token {ctx.deps.github_token}'} if ctx.deps.github_token else {}
+    
+    response = await ctx.deps.client.get(
+        f'https://api.github.com/repos/{owner}/{repo}',
+        headers=headers
+    )
+    
+    if response.status_code != 200:
+        return f"Failed to get repository info: {response.text}"
+    
+    data = response.json()
+    size_mb = data['size'] / 1024
+    
+    return (
+        f"Repository: {data['full_name']}\n"
+        f"Description: {data['description']}\n"
+        f"Size: {size_mb:.1f}MB\n"
+        f"Stars: {data['stargazers_count']}\n"
+        f"Language: {data['language']}\n"
+        f"Created: {data['created_at']}\n"
+        f"Last Updated: {data['updated_at']}"
+    )
+
+@github_agent.tool
+async def get_repo_structure(ctx: RunContext[GitHubDeps], github_url: str) -> str:
+    """Get the directory structure of a GitHub repository.
+
+    Args:
+        ctx: The context.
+        github_url: The GitHub repository URL.
+
+    Returns:
+        str: Directory structure as a formatted string.
+    """
+    match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', github_url)
+    if not match:
+        return "Invalid GitHub URL format"
+    
+    owner, repo = match.groups()
+    headers = {'Authorization': f'token {ctx.deps.github_token}'} if ctx.deps.github_token else {}
+    
+    response = await ctx.deps.client.get(
+        f'https://api.github.com/repos/{owner}/{repo}/git/trees/main?recursive=1',
+        headers=headers
+    )
+    
+    if response.status_code != 200:
+        # Try with master branch if main fails
+        response = await ctx.deps.client.get(
+            f'https://api.github.com/repos/{owner}/{repo}/git/trees/master?recursive=1',
+            headers=headers
+        )
+        if response.status_code != 200:
+            return f"Failed to get repository structure: {response.text}"
+    
+    data = response.json()
+    tree = data['tree']
+    
+    # Build directory structure
+    structure = []
+    for item in tree:
+        if not any(excluded in item['path'] for excluded in ['.git/', 'node_modules/', '__pycache__/']):
+            structure.append(f"{'📁 ' if item['type'] == 'tree' else '📄 '}{item['path']}")
+    
+    return "\n".join(structure)
+
+@github_agent.tool
+async def get_file_content(ctx: RunContext[GitHubDeps], github_url: str, file_path: str) -> str:
+    """Get the content of a specific file from the GitHub repository.
+
+    Args:
+        ctx: The context.
+        github_url: The GitHub repository URL.
+        file_path: Path to the file within the repository.
+
+    Returns:
+        str: File content as a string.
+    """
+    match = re.search(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$', github_url)
+    if not match:
+        return "Invalid GitHub URL format"
+    
+    owner, repo = match.groups()
+    headers = {'Authorization': f'token {ctx.deps.github_token}'} if ctx.deps.github_token else {}
+    
+    response = await ctx.deps.client.get(
+        f'https://raw.githubusercontent.com/{owner}/{repo}/main/{file_path}',
+        headers=headers
+    )
+    
+    if response.status_code != 200:
+        # Try with master branch if main fails
+        response = await ctx.deps.client.get(
+            f'https://raw.githubusercontent.com/{owner}/{repo}/master/{file_path}',
+            headers=headers
+        )
+        if response.status_code != 200:
+            return f"Failed to get file content: {response.text}"
+    
+    return response.text
+</file>
+
+<file path="README.md">
+# Pydantic AI: GitHub Repository Analysis Agent
+
+An intelligent GitHub repository analysis agent built using Pydantic AI, capable of analyzing GitHub repositories to answer user questions. The agent can fetch repository information, explore directory structures, and analyze file contents using the GitHub API.
+
+## Features
+
+- Repository information retrieval (size, description, etc.)
+- Directory structure analysis
+- File content examination
+- Support for both OpenAI and OpenRouter models
+- Available as both API endpoint and command-line interface
+
+## Prerequisites
+
+- Python 3.11+
+- GitHub Personal Access Token (for private repositories)
+- OpenRouter API key
+
+## Installation and Usage with Python
+
+1. Clone the repository:
+```bash
+git clone https://github.com/dislovemartin/SolnAI-agents.git
+cd SolnAI-agents/pydantic-github-agent
+```
+
+2. Install dependencies (recommended to use a Python virtual environment):
+```bash
+pip install -r requirements.txt
+```
+
+3. Set up environment variables:
+   - Rename `.env.example` to `.env`
+   - Edit `.env` with your API keys and preferences:
+   ```env
+   GITHUB_TOKEN=your_github_token  # Required for private repos
+   OPEN_ROUTER_API_KEY=your_openrouter_api_key
+   LLM_MODEL=your_chosen_model  # e.g., deepseek/deepseek-chat
+   SUPABASE_URL=your_supabase_url  # Only needed for endpoint
+   SUPABASE_SERVICE_KEY=your_supabase_key  # Only needed for endpoint
+   ```
+
+### Running the FastAPI Endpoint
+
+To run the agent as an API endpoint (also compatible with the oTTomator autogen_studio), run:
+
+```bash
+python github_agent_endpoint.py
+```
+
+The endpoint will be available at `http://localhost:8001`
+
+### Command Line Interface
+
+For a simpler interactive experience, you can use the command-line interface:
+
+```bash
+python cli.py
+```
+
+Example queries you can ask:
+- "What's the structure of repository https://github.com/username/repo?"
+- "Show me the contents of the main Python file in https://github.com/username/repo"
+- "What are the key features of repository https://github.com/username/repo?"
+
+## Installation and Usage with Docker
+
+If you prefer using Docker, you don't need to install Python or any dependencies locally:
+
+1. Clone the repository:
+```bash
+git clone https://github.com/dislovemartin/SolnAI-agents.git
+cd SolnAI-agents/pydantic-github-agent
+```
+
+2. Set up environment variables:
+   - Copy `.env.example` to `.env` and configure your API keys as shown in the Python installation section
+
+3. Build and run with Docker:
+```bash
+docker build -t github-agent .
+docker run -p 8001:8001 --env-file .env github-agent
+```
+
+The API endpoint will be available at `http://localhost:8001`
+
+## Configuration
+
+### LLM Models
+
+You can configure different LLM models by setting the `LLM_MODEL` environment variable. The agent uses OpenRouter as the API endpoint, supporting various models:
+
+```env
+LLM_MODEL=deepseek/deepseek-chat  # Default model
+```
+
+### API Keys
+
+- **GitHub Token**: Generate a Personal Access Token from [GitHub Settings](https://github.com/settings/tokens)
+- **OpenRouter API Key**: Get your API key from [OpenRouter](https://openrouter.ai/)
+
+## Project Structure
+
+- `github_agent_ai.py`: Core agent implementation with GitHub API integration
+- `cli.py`: Command-line interface for interacting with the agent
+- `requirements.txt`: Project dependencies
+
+## autogen_studio Version
+
+If you're interested in seeing how this agent is implemented in the autogen_studio, check out the `studio-integration-version` directory. This contains the production version of the agent that runs on the platform.
+
+## Error Handling
+
+The agent includes built-in retries for API calls and proper error handling for:
+- Invalid GitHub URLs
+- Rate limiting
+- Authentication issues
+- File not found errors
+</file>
+
+</files>

@@ -1,0 +1,4740 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+agents/
+  buzz_intern.py
+  buzz_master.py
+  orchestrator.py
+  responder.py
+  stream_starter.py
+constants/
+  constants.py
+  enums.py
+  prompts.py
+exceptions/
+  user_error.py
+media/
+  streambuzz_rag_demo.txt
+models/
+  agent_models.py
+  youtube_models.py
+routers/
+  chat_worker.py
+utils/
+  intent_util.py
+  rag_util.py
+  supabase_util.py
+  youtube_util.py
+youtube_credentials/
+  .gitignore
+  get_youtube_tokens.py
+.dockerignore
+.env.example
+.gitignore
+Dockerfile
+logger.py
+queries.sql
+README.md
+requirements.txt
+streambuzz.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="agents/buzz_intern.py">
+from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
+
+from constants.constants import (MODEL_RETRIES, PYDANTIC_AI_MODEL)
+from constants.prompts import BUZZ_INTERN_AGENT_SYSTEM_PROMPT
+
+# Create Agent Instance with System Prompt and Result Type
+buzz_intern_agent = Agent(
+    model=PYDANTIC_AI_MODEL,
+    name="buzz_intern_agent",
+    end_strategy="early",
+    model_settings=ModelSettings(temperature=0.3),
+    system_prompt=BUZZ_INTERN_AGENT_SYSTEM_PROMPT,
+    result_type=str,
+    result_retries=MODEL_RETRIES,
+    deps_type=str,
+)
+</file>
+
+<file path="agents/buzz_master.py">
+from constants.constants import (CHAT_WRITE_INTERVAL, MODEL_RETRIES,
+                                 PYDANTIC_AI_MODEL)
+from constants.enums import StateEnum
+from constants.prompts import BUZZ_MASTER_SYSTEM_PROMPT
+from exceptions.user_error import UserError
+from models.youtube_models import StreamMetadataDB, WriteChatModel
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.settings import ModelSettings
+from utils import supabase_util
+
+# Create Agent Instance with System Prompt and Result Type
+buzz_master_agent = Agent(
+    model=PYDANTIC_AI_MODEL,
+    name="buzz_master_agent",
+    end_strategy="early",
+    model_settings=ModelSettings(temperature=0.0),
+    system_prompt=BUZZ_MASTER_SYSTEM_PROMPT,
+    result_type=str,
+    result_tool_name="execute_task",
+    result_tool_description="execute tasks and return user friendly response",
+    result_retries=MODEL_RETRIES,
+    deps_type=str,
+)
+"""
+An agent designed to manage and respond to "buzz" prompts within a live stream context.
+
+This agent uses a system prompt to guide its behavior and interacts with a Supabase database
+to retrieve and store information about active streams and chat replies. It is configured to use
+a specific language model, end its execution early, and maintain a low temperature for consistent responses.
+
+Attributes:
+    model (str): The name of the language model to be used by the agent.
+        This is typically set by the `PYDANTIC_AI_MODEL` constant.
+    name (str): The name of the agent, which is "buzz_master_agent".
+    end_strategy (str): The strategy used to end the agent's execution.
+        "early" indicates that the agent will stop as soon as a result is available.
+    model_settings (ModelSettings): Configuration settings for the language model.
+        Includes parameters like `temperature`, set to 0.0 for deterministic output.
+    system_prompt (str): The system prompt that guides the agent's behavior.
+       This is defined by the `BUZZ_MASTER_SYSTEM_PROMPT` constant and provides context for the agent's tasks.
+    result_type (type): The expected data type of the agent's output, set to `str`.
+    result_tool_name (str): The name of the tool used to return the final result, "execute_task".
+    result_tool_description (str): A description of the result tool, "execute tasks and return user friendly response".
+    result_retries (int): The number of times to retry the result tool if it fails, set by `MODEL_RETRIES`.
+    deps_type (type): The expected data type of the agent's dependencies, set to `str`.
+"""
+
+async def get_active_stream(session_id):
+    active_stream: StreamMetadataDB = await supabase_util.get_active_stream(
+        session_id=session_id
+    )
+    if not active_stream:
+        raise UserError(
+            "You are not moderating any YouTube live stream currently. "
+            "Start a stream by sending a YouTube Live Stream URL"
+            )
+    return active_stream
+
+@buzz_master_agent.tool
+async def get_current_buzz(ctx: RunContext[str]) -> str:
+    """
+    Retrieves the current active buzz for a given session ID.
+
+    This tool queries the Supabase database to find the currently active buzz associated with the provided session ID.
+    The buzz is typically a text prompt or question that the agent is meant to respond to.
+
+    Args:
+        ctx (RunContext[str]): The context of the agent run, containing the session ID as a dependency.
+            The session ID is used to identify the specific stream or context.
+
+    Returns:
+        str: The current buzz associated with the session ID.
+            Returns an empty string if no active buzz is found.
+
+    Raises:
+        Exception: If there is an issue fetching data from the database,
+            such as a network error or database query failure.
+    """
+    _ = await get_active_stream(session_id=ctx.deps)
+    return await supabase_util.get_current_buzz(session_id=ctx.deps)
+
+
+@buzz_master_agent.tool
+async def get_next_buzz(ctx: RunContext[str]) -> str:
+    """
+    Marks the current buzz as inactive and retrieves the next buzz for a given session ID.
+
+    This tool first deactivates the current active buzz associated with the provided session ID in the Supabase database.
+    It then retrieves the next available buzz, which becomes the new active buzz for the session.
+
+    Args:
+        ctx (RunContext[str]): The context of the agent run, containing the session ID as a dependency.
+            The session ID is used to identify the specific stream or context.
+
+    Returns:
+        str: The next buzz associated with the session ID.
+            Returns an empty string if no next buzz is found.
+
+    Raises:
+        Exception: If there is an issue interacting with the database,
+            such as problems marking the current buzz inactive or fetching the next one.
+    """
+    _ = await get_active_stream(session_id=ctx.deps)
+    await supabase_util.mark_current_buzz_inactive(session_id=ctx.deps)
+    return await supabase_util.get_current_buzz(session_id=ctx.deps)
+
+
+@buzz_master_agent.tool
+async def store_reply(ctx: RunContext[str], reply: str) -> str:
+    """
+    Stores a user's reply for a given session ID, associated with the active stream.
+
+    This tool stores a user's reply in the Supabase database, associating it with the active live stream
+    for the given session ID. The reply is initially marked as not yet written to the live chat.
+    Replies are cumulated within a time slot defined by `CHAT_WRITE_INTERVAL`.
+
+    Args:
+        ctx (RunContext[str]): The context of the agent run, containing the session ID as a dependency.
+            The session ID is used to identify the specific stream or context.
+        reply (str): The user's reply to be stored.
+
+    Returns:
+        str: A confirmation message indicating that the reply has been acknowledged and will be posted
+            to the live chat within the specified time slot.
+
+    Raises:
+        UserError: If no active stream is found for the given session ID, or if there is an error
+            storing the reply in the database. The error message provides details about the failure.
+    """
+    try:
+        active_stream = await get_active_stream(session_id=ctx.deps)
+        await supabase_util.store_reply(
+            WriteChatModel(
+                session_id=active_stream.session_id,
+                live_chat_id=active_stream.live_chat_id,
+                retry_count=0,
+                reply=reply,
+                is_written=StateEnum.NO.value,
+            )
+        )
+        return f"Your reply is acknowledged. Replies within time slot of {CHAT_WRITE_INTERVAL} seconds will be cumulated and posted to live chat."
+    except Exception as e:
+        raise UserError(f"Error storing reply: {str(e)}")
+</file>
+
+<file path="agents/orchestrator.py">
+from typing import List
+
+from pydantic_ai.messages import ModelRequest, ModelResponse
+
+from constants.constants import (START_STREAM_APPEND)
+from constants.enums import StreamerIntentEnum
+from exceptions.user_error import UserError
+from models.agent_models import AgentRequest
+from utils import intent_util
+from utils.rag_util import create_knowledge_base
+from .buzz_master import buzz_master_agent
+from .responder import responder_agent
+from .stream_starter import stream_starter_agent
+
+
+async def get_response(
+    request: AgentRequest,
+    human_messages: list[str],
+    messages: List[ModelRequest | ModelResponse],
+) -> str:
+    """Orchestrates the response generation process based on the user's intent.
+
+    This function acts as a central dispatcher, receiving a user request and
+    determining the appropriate agent to handle it. It first processes any
+    provided files using RAG (Retrieval Augmented Generation) if available.
+    Then, it classifies the user's intent using a dedicated utility. Based on
+    the identified intent, it calls a specific agent to generate a response.
+
+    Args:
+        request: An AgentRequest object containing the user's query, session ID, and
+            any associated files.
+        human_messages: A list of strings representing the history of human
+            messages in the current conversation.
+        messages: A list of ModelRequest or ModelResponse objects representing
+            the history of model messages in the current conversation.
+
+    Returns:
+        A string containing the generated response from the selected agent.
+
+    Raises:
+        UserError: If a user-related error occurs during processing, such as
+            invalid input or a problem with user-specific data.
+        Exception: If any other unexpected error occurs during the execution of
+            this function, such as network issues or unexpected model responses.
+    """
+    try:
+        # Make file RAG ready
+        if request.files:
+            await create_knowledge_base(request)
+
+        # Get streamer's buzz_type
+        streamer_intent: StreamerIntentEnum = (
+            await intent_util.classify_streamer_intent(
+                messages=human_messages, query=request.query
+            )
+        )
+        print(f"{request.query=}>> {streamer_intent.name=}")
+
+        # Perform task based on streamer's buzz_type
+        if streamer_intent == StreamerIntentEnum.START_STREAM:
+            agent_result = await stream_starter_agent.run(
+                user_prompt=request.query, deps=request.session_id, result_type=str
+            )
+            response = agent_result.data + START_STREAM_APPEND
+        elif streamer_intent == StreamerIntentEnum.GET_CURRENT_CHAT:
+            agent_result = await buzz_master_agent.run(
+                user_prompt="Get current buzz.",
+                deps=request.session_id,
+                result_type=str,
+            )
+            response = agent_result.data
+        elif streamer_intent == StreamerIntentEnum.GET_NEXT_CHAT:
+            agent_result = await buzz_master_agent.run(
+                user_prompt="Get next buzz.", deps=request.session_id, result_type=str
+            )
+            response = agent_result.data
+        elif streamer_intent == StreamerIntentEnum.REPLY_CHAT:
+            agent_result = await buzz_master_agent.run(
+                user_prompt=f"Extract and store reply from this message:\n{request.query}",
+                deps=request.session_id,
+                result_type=str,
+            )
+            response = agent_result.data
+        else:
+            agent_result = await responder_agent.run(
+                user_prompt=request.query,
+                deps=request.session_id,
+                result_type=str,
+                message_history=messages,
+            )
+            response = agent_result.data
+
+        return response
+    except UserError as ue:
+        print(f"Error>> get_response: {str(ue)}")
+        raise
+    except Exception as e:
+        print(f"Error>> get_response: {str(e)}")
+        raise
+</file>
+
+<file path="agents/responder.py">
+from constants.constants import MODEL_RETRIES, PYDANTIC_AI_MODEL
+from constants.prompts import RESPONDER_SYSTEM_PROMPT
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.settings import ModelSettings
+from utils import supabase_util
+from utils.rag_util import get_embedding
+
+# Create Agent Instance with System Prompt and Result Type
+responder_agent = Agent(
+    model=PYDANTIC_AI_MODEL,
+    name="responder_agent",
+    end_strategy="early",
+    model_settings=ModelSettings(temperature=0.5),
+    system_prompt=RESPONDER_SYSTEM_PROMPT,
+    result_type=str,
+    result_tool_name="respond",
+    result_tool_description="respond queries using RAG. If no sufficient "
+    "information is found in knowledge base then "
+    "default to LLM to generate the response",
+    result_retries=MODEL_RETRIES,
+)
+
+
+@responder_agent.tool
+async def respond(ctx: RunContext[str], user_query: str) -> str | None:
+    """Responds to a user query using Retrieval Augmented Generation (RAG).
+
+    This tool leverages a knowledge base stored in Supabase to provide contextually
+    relevant answers to user queries. It first checks if a knowledge base exists for
+    the given session ID. If found, it retrieves relevant document chunks by
+    embedding the user query and comparing it to pre-computed embeddings of the
+    document chunks. The retrieved chunks are then formatted and returned as a
+    single string. If no knowledge base is found, or if no relevant chunks are
+    retrieved, the function returns None, signaling the agent to fall back to
+    the LLM for a response.
+
+    Args:
+        ctx: The context of the current agent run. This includes dependencies
+            passed to the agent, such as the session ID, accessible via `ctx.deps`.
+        user_query: The user's question or query string.
+
+    Returns:
+        A string containing formatted document chunks relevant to the user query,
+        or None if no relevant information is found or an error occurs. The chunks
+        are formatted with a header containing the document title, followed by the
+        document content, with a separator ("\\n---\\n") between chunks. If an error
+        occurs during retrieval, a string containing the error message is returned.
+
+    Raises:
+        Exception: If an error occurs during the retrieval process, such as issues
+            accessing the database or embedding the query. The error message is
+            logged to the console and returned as a string.
+    """
+    try:
+        # Check if session_id has knowledge base
+        file_name: str = await supabase_util.get_kb_file_name(session_id=ctx.deps)
+        if not file_name:
+            return None
+
+        # Get the embedding for the query
+        query_embedding = await get_embedding(user_query)
+
+        # Query Supabase for relevant documents
+        result = await supabase_util.get_matching_chunks(
+            query_embedding=query_embedding, session_id=ctx.deps
+        )
+
+        if not result:
+            return None
+
+        # Format the results
+        formatted_chunks = []
+        for doc in result:
+            chunk_text = f"""# {doc['title']}\n{doc['content']}"""
+            formatted_chunks.append(chunk_text)
+
+        # Join all chunks with a separator
+        return "\n---\n".join(formatted_chunks)
+
+    except Exception as e:
+        print(f"Error retrieving documentation: {e}")
+        return f"Error retrieving documentation: {str(e)}"
+</file>
+
+<file path="agents/stream_starter.py">
+from typing import Any, Dict
+
+from constants.constants import MODEL_RETRIES, PYDANTIC_AI_MODEL
+from constants.prompts import STREAM_STARTER_AGENT_SYSTEM_PROMPT
+from exceptions.user_error import UserError
+from models.youtube_models import StreamMetadata, StreamMetadataDB
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.settings import ModelSettings
+from utils import supabase_util
+from utils.youtube_util import (deactivate_session, get_stream_metadata,
+                                validate_and_extract_youtube_id)
+
+# Create Agent Instance with System Prompt and Result Type
+stream_starter_agent = Agent(
+    model=PYDANTIC_AI_MODEL,
+    name="stream_starter_agent",
+    end_strategy="early",
+    model_settings=ModelSettings(temperature=0.0),
+    system_prompt=STREAM_STARTER_AGENT_SYSTEM_PROMPT,
+    result_type=str,
+    result_tool_name="start_stream",
+    result_tool_description="get url from user query, validate the url and start the "
+    "stream.",
+    result_retries=MODEL_RETRIES,
+    deps_type=str,
+)
+
+
+def get_live_chat_id(metadata: Dict[str, Any]) -> str:
+    """Extract the live chat ID from the provided metadata.
+
+    This function attempts to retrieve the active live chat ID from the
+    'liveStreamingDetails' section of the given metadata.
+
+    Args:
+        metadata: A dictionary containing live-streaming details, expected to have a
+          'liveStreamingDetails' key with a nested 'activeLiveChatId' key.
+
+    Returns:
+        The live chat ID as a string.
+
+    Raises:
+        UserError: If the 'liveStreamingDetails' or 'activeLiveChatId' keys
+          are missing or if any error occurs while accessing them, indicating an
+          inactive or invalid stream link.
+    """
+    try:
+        return metadata.get("liveStreamingDetails").get("activeLiveChatId")
+    except Exception as e:
+        print(f"Error fetching live chat id: {str(e)}")
+        raise UserError("Inactive or invalid stream link.")
+
+
+def populate_metadata_class(snippet: Dict[str, Any]) -> StreamMetadata:
+    """Populate a StreamMetadata object with video details from a snippet.
+
+    This function extracts relevant information such as the title, channel title,
+    and thumbnail URL from the provided snippet dictionary and uses it to
+    create and return a `StreamMetadata` instance.
+
+    Args:
+        snippet: A dictionary containing video details, expected to have
+            'title', 'channelTitle', and nested 'thumbnails' keys with a
+            'high' key containing a 'url'.
+
+    Returns:
+        A `StreamMetadata` instance populated with the extracted video details.
+    """
+    return StreamMetadata(
+        title=snippet.get("title").strip(),
+        channel_title=snippet.get("channelTitle"),
+        thumbnail_url=snippet.get("thumbnails").get("high").get("url"),
+    )
+
+
+@stream_starter_agent.tool
+async def start_stream(ctx: RunContext[str], url: str) -> Dict[str, Any]:
+    """Start a stream by validating the URL and fetching stream metadata.
+
+    This asynchronous function is decorated as a tool for the
+    `stream_starter_agent`. It takes a YouTube URL, validates it, retrieves
+    the stream metadata, and stores the relevant information in a database. It
+    also deactivates the current session.
+
+    Args:
+        ctx: The run context containing dependencies, specifically the session ID.
+        url: The YouTube URL to validate and start the stream.
+
+    Returns:
+        A dictionary containing the stream metadata, including title, channel
+        title, and thumbnail URL.
+
+    Raises:
+        UserError: If the provided URL is invalid, if the stream is not live,
+          or if there is an issue retrieving metadata from the YouTube API.
+        Exception: If any other unexpected error occurs during the process.
+    """
+    session_id = ctx.deps
+    try:
+        video_id = await validate_and_extract_youtube_id(url=url)
+        video_metadata = await get_stream_metadata(
+            video_id=video_id, session_id=session_id
+        )
+        metadata_items = video_metadata.get("items")
+
+        if not metadata_items:
+            raise UserError("Invalid YouTube stream link.")
+
+        video_id = metadata_items[0].get("id")
+        snippet = metadata_items[0].get("snippet")
+        live_chat_id = get_live_chat_id(metadata_items[0])
+        stream_metadata = populate_metadata_class(snippet)
+
+        # Update flag for session_id
+        await deactivate_session(session_id)
+
+        # Store metadata in DB
+        stream_metadata_db = StreamMetadataDB(
+            **stream_metadata.model_dump(),
+            video_id=video_id,
+            live_chat_id=live_chat_id,
+            session_id=session_id,
+            next_chat_page="",
+            is_active=1,
+        )
+        await supabase_util.start_stream(stream_metadata_db)
+        return stream_metadata.model_dump()
+    except UserError as ue:
+        print(f"Error>> start_stream: {str(ue)}")
+        raise
+    except Exception as e:
+        print(f"Error>> start_stream: {str(e)}")
+        raise
+</file>
+
+<file path="constants/constants.py">
+import os
+
+from dotenv import load_dotenv
+from openai import OpenAI
+from pydantic_ai.models.gemini import GeminiModel
+from pydantic_ai.models.openai import OpenAIModel
+from supabase import create_client
+
+load_dotenv()
+
+# Files
+TITLE = "title"
+SUMMARY = "summary"
+ACCEPTED_FILE_QUANTITY = 1
+"""The number of files accepted for processing."""
+ACCEPTED_FILE_MIME = "text/plain"
+"""The accepted MIME type of the file."""
+ACCEPTED_FILE_EXTENSION = ".txt"
+"""The accepted file extension."""
+MAX_FILE_SIZE_MB = 5
+"""Maximum file size in megabytes."""
+MAX_FILE_SIZE_B = MAX_FILE_SIZE_MB * 1024 * 1024  # 5MB
+"""Maximum file size in bytes."""
+
+
+# Intents
+CHAT_READ_INTERVAL = 30
+"""Interval in seconds to read chat messages."""
+CHAT_WRITE_INTERVAL = 60
+"""Interval in seconds to write chat messages."""
+CONVERSATION_CONTEXT = 3
+"""Number of previous messages to include in the conversation context."""
+START_STREAM_APPEND = f"\n\nFetching buzz in {CHAT_READ_INTERVAL} seconds..."
+"""Message appended to start of stream."""
+CONFIDENCE_THRESHOLD = 0.35
+STREAMER_INTENT_EXAMPLES = {
+    "START_STREAM": [
+        "Start the stream",
+        "Begin streaming",
+        "Initiate the live stream",
+        "Go live",
+        "Launch the stream",
+        "Start broadcasting",
+        "Begin live transmission",
+        "Kick off the stream",
+        "Turn on the stream",
+        "Start moderating",
+        "Begin moderating the stream",
+        "Activate live moderation",
+        "Enable stream moderation",
+        "Start monitoring the stream",
+    ],
+    "GET_CURRENT_CHAT": [
+        "Get now",
+        "Get current",
+        "Display current",
+        "What’s happening now?",
+        "Show me the current buzz",
+        "Fetch latest update",
+        "What’s trending now?",
+        "Show the current status",
+        "What is happening at the moment?",
+        "Give me the latest buzz",
+        "Retrieve the latest topic",
+        "What’s live right now?",
+    ],
+    "GET_NEXT_CHAT": [
+        "Get next",
+        "Display next",
+        "What’s next?",
+        "Tell me the next one",
+        "Show the upcoming buzz",
+        "What’s coming up?",
+        "After this, what’s next?",
+        "Show me the next trending topic",
+        "Give me the next item",
+        "What’s the next update?",
+        "What follows this?",
+        "Move to the next topic",
+    ],
+    "REPLY_CHAT": [
+        "Respond to the message",
+        "Write a reply",
+        "Reply as",
+        "Post reply",
+        "Post a response",
+        "Send an answer",
+        "Write a message back",
+        "Craft a response",
+        "Respond appropriately",
+        "Answer the user",
+        "Type a reply",
+        "React to this message",
+        "Post a reply",
+        "Reply with the right words",
+        "Post a reply about this",
+        "Post a reply AI agents are amazing",
+        "Post a reply ...",
+        "Write a reply now",
+        "Reply with a comment",
+        "Reply to this statement",
+        "Write a quick reply",
+        "Post your reply to this",
+        "Draft a reply",
+        "Post a reply regarding this",
+        "Send a reply about this",
+        "Type your reply",
+        "Post a relevant reply",
+        "Post a reply and share thoughts",
+        "Send a reply, AI agents are amazing",
+        "Post a response about AI agents",
+        "Draft a reply based on the topic",
+        "Write a follow-up reply",
+        "Reply to this with context",
+        "Post a meaningful reply",
+        "Reply to this, it’s amazing",
+        "Craft a reply for this statement",
+        "Reply now to this amazing post",
+        "Reply to the message, amazing AI",
+        "Post a proper reply to this query",
+        "Write a thoughtful reply",
+        "Post a reply and expand on this",
+        "Share your reply about AI"
+    ],
+    "UNKNOWN": [
+        "Hi",
+        "Hello",
+        "Whatsup",
+        "What is pydantic ai?",
+        "Use knowledge base to answer",
+        "Use RAG to answer",
+        "Random query",
+        "Unrelated question",
+        "This doesn't fit any category",
+        "Tell me a joke",
+        "Who is the president of Mars?",
+        "Define an impossible concept",
+        "What’s the meaning of life?",
+        "Completely off-topic question",
+    ],
+}
+
+"""Examples of streamer intents and their corresponding phrases.
+
+    This dictionary maps intent names (keys) to lists of example phrases (values)
+    that a streamer might use to trigger that intent.
+"""
+
+# Model Constants
+EMBEDDING_MODEL_NAME = "models/text-embedding-004"
+"""Name of the embedding model.
+
+    This string represents the specific model name used for generating embeddings.
+"""
+EMBEDDING_DIMENSIONS = 768
+"""Dimensionality of the generated embeddings.
+
+    This integer represents the number of dimensions in the vector space where text
+    is embedded.
+"""
+CHUNK_SIZE = 1000
+"""Size of text chunks used for processing.
+
+    This integer defines the maximum number of characters to consider when processing
+    text in chunks.
+"""
+MODEL_RETRIES = 3
+"""Number of retries for model calls.
+
+    This integer specifies the maximum number of times to retry a model call in case
+    of failure.
+"""
+
+# Open Router Pydantic-AI model related constants
+OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+"""Base URL for Open Router API.
+
+    This string defines the base URL used to make API requests to Open Router.
+"""
+# OPEN_ROUTER_MODEL_NAME = "google/gemini-2.0-flash-thinking-exp:free"
+OPEN_ROUTER_MODEL_NAME = "openai/gpt-4o-mini"
+"""Name of the Open Router model.
+
+    This string specifies the name of the model to be used from the Open Router API.
+"""
+OPEN_ROUTER_CLIENT = OpenAI(
+    base_url=OPEN_ROUTER_BASE_URL,
+    api_key=os.getenv("OPEN_ROUTER_API_KEY"),
+)
+"""OpenAI client configured for Open Router.
+
+    This instance of the OpenAI client is configured to use the Open Router API.
+"""
+OPEN_ROUTER_MODEL = OpenAIModel(
+    model_name=OPEN_ROUTER_MODEL_NAME,
+    base_url=OPEN_ROUTER_BASE_URL,
+    api_key=os.getenv("OPEN_ROUTER_API_KEY"),
+)
+"""Pydantic-AI OpenAI model configured for Open Router.
+
+    This instance of the Pydantic-AI OpenAI model is configured to use the Open Router API.
+"""
+
+# Gemini Pydantic-AI model related constants - testing
+GEMINI_MODEL_NAME = "gemini-2.0-flash-exp"
+"""Name of the Gemini model.
+
+    This string specifies the name of the Gemini model to be used.
+"""
+GEMINI_MODEL = GeminiModel(
+    model_name=GEMINI_MODEL_NAME, api_key=os.getenv("GEMINI_API_KEY")
+)
+"""Pydantic-AI Gemini model.
+
+   This instance of the Pydantic-AI Gemini model is configured with the API key.
+"""
+
+# Model used in project
+# PYDANTIC_AI_MODEL = GEMINI_MODEL
+PYDANTIC_AI_MODEL = OPEN_ROUTER_MODEL
+"""The Pydantic-AI model used in the project.
+
+    This is the main model used for generating text responses.
+"""
+
+# YouTube API related constants
+YOUTUBE_URL_REGEX = r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/[a-zA-Z0-9_\-]+"
+"""Regex for matching YouTube URLs.
+
+    This regular expression is used to validate YouTube URLs.
+"""
+ALLOWED_DOMAINS = ["youtube.com", "www.youtube.com", "youtu.be"]
+"""Allowed domains for YouTube URLs.
+
+    This list specifies the valid domains for YouTube URLs.
+"""
+YOUTUBE_API_ENDPOINT = "https://www.googleapis.com/youtube/v3/videos"
+"""Endpoint for YouTube API videos.
+
+    This string defines the API endpoint for retrieving video information from YouTube.
+"""
+YOUTUBE_LIVE_API_ENDPOINT = "https://www.googleapis.com/youtube/v3/liveChat/messages"
+"""Endpoint for YouTube API live chat messages.
+
+    This string defines the API endpoint for retrieving live chat messages from YouTube.
+"""
+OAUTH_TOKEN_URI = "https://oauth2.googleapis.com/token"
+YOUTUBE_SSL = "https://www.googleapis.com/auth/youtube.force-ssl"
+
+# Supabase setup constants
+SUPABASE_CLIENT = create_client(
+    os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY")
+)
+"""Supabase client.
+
+    This instance of the Supabase client is configured to interact with the Supabase database.
+"""
+
+# Table names
+MESSAGES = "messages"
+"""Name of the messages table.
+
+    This string represents the name of the table storing chat messages.
+"""
+YT_STREAMS = "youtube_streams"
+"""Name of the youtube streams table.
+
+    This string represents the name of the table storing youtube stream information.
+"""
+YT_BUZZ = "youtube_buzz"
+"""Name of the youtube buzz table.
+
+    This string represents the name of the table storing youtube buzz information.
+"""
+YT_REPLY = "youtube_reply"
+"""Name of the youtube reply table.
+
+    This string represents the name of the table storing youtube reply information.
+"""
+STREAMER_KB = "streamer_knowledge"
+"""Name of the streamer knowledge table.
+
+    This string represents the name of the table storing streamer knowledge base.
+"""
+</file>
+
+<file path="constants/enums.py">
+from enum import Enum
+
+
+class StreamerIntentEnum(Enum):
+    """
+    Enumeration representing the different intents a streamer might have.
+
+    This enum defines the possible actions a streamer might want to perform,
+    such as starting a stream, checking the current buzz, or replying to a post.
+
+    Attributes:
+        START_STREAM: Indicates the streamer intends to start a new stream.
+        GET_CURRENT_CHAT: Indicates the streamer intends to check the current buzz.
+        GET_NEXT_CHAT: Indicates the streamer intends to check the next buzz.
+        REPLY_CHAT: Indicates the streamer intends to reply to a post.
+        UNKNOWN: Indicates the streamer's intent is unknown or could not be determined.
+    """
+
+    START_STREAM = 0
+    """Indicates the streamer intends to start a new stream."""
+    GET_CURRENT_CHAT = 1
+    """Indicates the streamer intends to check the current buzz."""
+    GET_NEXT_CHAT = 2
+    """Indicates the streamer intends to check the next buzz."""
+    REPLY_CHAT = 3
+    """Indicates the streamer intends to reply to a post."""
+    UNKNOWN = 4
+    """Indicates the streamer's intent is unknown or could not be determined."""
+
+
+class BuzzStatusEnum(Enum):
+    """
+    Enumeration representing the different statuses a buzz can have.
+
+    This enum defines the various stages a buzz can be in, from being found to being
+    active or inactive.
+
+    Attributes:
+        FOUND: Indicates that the buzz has been initially found.
+        PROCESSING: Indicates that the buzz is currently being processed.
+        ACTIVE: Indicates that the buzz is currently active.
+        INACTIVE: Indicates that the buzz is currently inactive.
+    """
+
+    FOUND = 0
+    """Indicates that the buzz has been initially found."""
+    PROCESSING = 1
+    """Indicates that the buzz is currently being processed."""
+    ACTIVE = 2
+    """Indicates that the buzz is currently active."""
+    INACTIVE = 3
+    """Indicates that the buzz is currently inactive."""
+
+
+class StateEnum(Enum):
+    """
+    Enumeration representing a binary or pending state.
+
+    This enum defines states that are typically represented as a simple yes/no,
+    with an option for a pending state.
+
+     Attributes:
+        NO: Indicates a negative or 'no' state.
+        YES: Indicates a positive or 'yes' state.
+        PENDING: Indicates a pending or undecided state.
+    """
+
+    NO = 0
+    """Indicates a negative or 'no' state."""
+    YES = 1
+    """Indicates a positive or 'yes' state."""
+    PENDING = 2
+    """Indicates a pending or undecided state."""
+</file>
+
+<file path="constants/prompts.py">
+BUZZ_INTERN_AGENT_SYSTEM_PROMPT = """
+You are an assistant for YouTube Live Streamers. 
+Respond directly to queries with no extra context or explanations. 
+Follow word limits if specified. Only return the final response.
+"""
+
+CHAT_ANALYSER_PROMPT = """
+Prompt:
+Classify original_chat as QUESTION, CONCERN, or REQUEST.
+
+Rules:
+1. Exclude records classified as Unknown (small talk, hate speech or irrelevant).
+2. Return a JSON list with:
+    - original_chat (unchanged)
+    - author (unchanged)
+    - intent (QUESTION, CONCERN, or REQUEST).
+3. Ensure intent has only one value.
+
+Input:
+JSON list with original_chat and author.
+
+Output:
+JSON list with original_chat, author, and intent.
+"""
+
+TITLE_SUMMARY_PROMPT = """
+Extract the title and summary from the given text chunk:
+1. Title:
+   - If it appears to be the start of a document, extract its title.
+   - If it is a middle chunk, derive a descriptive title.
+2. Summary:
+   - Create a concise summary of the main points in the chunk.
+
+Output: Use this JSON schema:
+```json
+{
+  "title": "str",
+  "summary": "str"
+}
+```
+Return the JSON object as the result.
+"""
+
+
+REPLY_SUMMARISER_PROMPT = """
+Summarize the following chat reply using these rules:
+
+1. Sound professional and focus on increasing community engagement.
+2. Preserve names, social media handles, usernames, quotes, keywords, domain-specific 
+terms, expert literature, and lingo without modification or omission of crucial 
+information.
+3. Use numbering if necessary, otherwise maintain a coherent flow.
+"""
+
+
+STREAM_STARTER_AGENT_SYSTEM_PROMPT = """
+You are a helpful moderator for YouTube Live Streamers. 
+
+Tasks:
+1. Extract one complete URL from the user query. If no URL is found, use a blank 
+string as the default.
+2. Call `start_stream` with the extracted `url` as the argument.
+3. If `start_stream` executes successfully, return an acknowledgment with extensive 
+video details.
+4. Handle errors gracefully and reply with user-friendly messages.
+
+Rules:
+1. Call tool only once per task.
+2. Strictly follow the instructions.
+"""
+
+
+BUZZ_MASTER_SYSTEM_PROMPT = """
+You are a precise moderator for YouTube Live Streamers. Execute tasks efficiently and 
+respond with user-friendly outputs. Follow these instructions:
+
+Tasks:
+1. Get Current Buzz:
+   - Call `get_current_buzz` to retrieve the current buzz. It returns JSON. If empty, 
+   reply with a short message conveying no new buzz, you are up to date.
+   - Extract: `buzz_type`, `original_chat`, `author`, `generated_response`.
+   - Format and return the data in a readable, concise manner. Use spacing and line 
+   breaks for clarity, if required.
+
+2. Get Next Buzz:
+   - Call `get_next_buzz` to retrieve the next buzz. It returns JSON. If empty, 
+   reply with a short message conveying no new buzz, you are up to date.
+   - Extract: `buzz_type`, `original_chat`, `author`, `generated_response`.
+   - Format and return the data in a readable, concise manner. Use spacing and line 
+   breaks for clarity, if required.
+
+3. Extract and Store Reply:
+   - Extract the reply from the query in active voice, ensuring conciseness and 
+   completeness.
+   - Call `store_reply` with the extracted reply.
+   - If successful, reply: "Replies will be cumulated and posted to live chat within 
+   a minute."
+
+Rules:
+1. Call each tool only once per task.
+2. Do not call unnecessary tools.
+3. You can use appropriate emojis to make response engaging.
+"""
+
+
+RESPONDER_SYSTEM_PROMPT = """
+You are a helpful moderator and precise query responder for YouTube Live Streamers and 
+YouTube Live Chats.
+
+Tasks:
+1. Call `respond` with the user query and message history.
+2. If `respond` returns RAG chunks, generate and return a comprehensive response 
+using those chunks.
+3. If `respond` returns None, create and return an engaging response to the user 
+query using your intelligence and relevant knowledge. You can also use message 
+history for context, if available.
+4. If `respond` fails, return a user-friendly message.
+
+Rules:
+1. Follow word limits, if specified in the user query.
+2. Call each tool only once per task. Avoid redundant or unnecessary tool calls.
+3. You can use appropriate emojis to make response engaging.
+"""
+</file>
+
+<file path="exceptions/user_error.py">
+class UserError(Exception):
+    """
+    Exception raised for user-facing validation errors or other issues
+    resulting from invalid user input or actions.
+
+    This exception is intended to be caught and its message displayed to
+    the user, providing helpful feedback on what went wrong. It is distinct
+    from internal errors or bugs in the application.
+    """
+
+    def __init__(self, message: str) -> None:
+        """
+        Initializes a new UserError exception.
+
+        Args:
+            message: The error message to display to the user. This message
+                should be clear, concise, and informative, explaining the reason
+                for the error.
+
+        Returns:
+            None.
+        """
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Returns a string representation of the UserError.
+
+        This method overrides the default __str__ method to provide a
+        cleaner, user-friendly message, removing the surrounding parentheses
+        and quotes that would otherwise be present in the default representation.
+
+        Returns:
+            The error message as a string.
+        """
+        return f"{self.args[0]}"
+</file>
+
+<file path="media/streambuzz_rag_demo.txt">
+Introduction
+
+The autogen_studio allows users to interact with community-created AI agents through a unified system. As a developer, you can create an agent that can be plugged into this platform, enabling users to easily try your agent without you having to manage authentication, handle rate limiting, or build a frontend.
+The key to integration is ensuring your agent communicates using the expected input/output formats and manages conversation history as specified.
+You can even test if your agent is compatible with the autogen_studio and use the Studio as a frontend for your agent with our Agent 0 Playground:
+Agent 0 Playground
+
+Agent Requirements
+Technical Requirements
+To ensure compatibility with the autogen_studio, your agent must:
+	•	Accept specific input parameters in a POST request.
+	•	Produce output JSON in the required format.
+	•	Manage conversation history by storing messages in a SQL database (preferably Supabase).
+NOTE: These requirements don't apply to Voiceflow agents because of the direct integration with the Studio.
+Access and Authorization
+	•	If your agent requires acessing user's third party accounts (e.g., Gmail, Slack, etc.), you must implement the authorization flow yourself.
+Language Models
+	•	For the Hackathon specifically, we recommend using small and fast LLMs that cost less than $0.1 per 1M input tokens, such as:
+	•	Gemini 2.0 Flash
+	•	Claude 3.5 Haiku
+	•	Llama 3.3 70b
+	•	GPT-4o-mini
+	•	With a good agent architecture, larger models like o1 should not be necessary. Take it as a challenge if anything!
+API Usage
+	•	Only use APIs that:
+	•	Cost less than $0.01 per agent execution
+	•	Don't have rate limits that would prevent hundreds of voters from trying the agent
+	•	Example: Use the Brave API instead of SerpAPI for web search
+Development Platforms
+The agent can be built with any of the following:
+	•	Anything if it's within a Docker container
+	•	Any Python framework. Suggestions for frameworks:
+	•	Pydantic AI
+	•	LangChain
+	•	LlamaIndex
+	•	n8n
+	•	Flowise
+	•	Voiceflow
+
+Sample Agents
+To help you get started, we have provided two sample agent implementations:
+	•	Sample n8n Agent - A barebones example of implementing an n8n agent compatible with the autogen_studio.
+	•	Sample Python Agent - A basic implementation example using Python with FastAPI.
+	•	For Voiceflow, there is a direct integration with the autogen_studio so no need to create anything custom!
+Input Parameters
+When the autogen_studio invokes your agent, it will send a POST request to your agent's webhook URL with the following JSON payload:
+{
+  "query": "User's input text",
+  "user_id": "Unique user identifier",
+  "request_id": "Unique request identifier",
+  "session_id": "Conversation session identifier",
+  "files": [... see the Handling File Uploads section if applicable to your agent]
+}
+Parameter Details
+	•	query: (String) The user's input or question. It is sanitized and limited to 1000 characters.
+	•	user_id: (String) A unique identifier for the authenticated user.
+	•	request_id: (String) A unique ID for the request to prevent duplicate processing.
+	•	session_id: (String) A unique ID representing the conversation session.
+	•	files: (Array, optional) An array of file objects that were uploaded by the user. See the Handling File Uploads section for details.
+
+Output Parameters
+Your agent must respond with a JSON object indicating the success or failure of processing the user's query:
+{
+  "success": true
+}
+Response Details
+	•	success: (Boolean) Indicates whether the agent successfully processed the request. Use true for success and false for failure.
+Note: Since all the AI messages and data are stored directly in the database, you do not need to return any additional data in the response.
+Data Output Format
+While the response JSON is simplified, your agent can still include additional data in the messages stored in the database. This data can be utilized by the frontend to enhance the user experience.
+Storing Messages in the Database
+Your agent is responsible for storing the conversation history by inserting messages into a SQL database unless you are building a Voiceflow agent. This ensures that the conversation history is maintained and can be retrieved by the autogen_studio. While any PostgreSQL-compatible database can be used, using Supabase directly is preferred due to its seamless integration with our platform.
+Use this SQL to create the messages table:
+-- Enable the pgcrypto extension for UUID generation
+-- Note: If you're using Supabase, the pgcrypto extension is already enabled by default.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE messages (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    session_id TEXT NOT NULL,
+    message JSONB NOT NULL
+);
+
+CREATE INDEX idx_messages_session_id ON messages(session_id);
+CREATE INDEX idx_messages_created_at ON messages(created_at);
+For n8n, if you use the Agent node the table will automatically be created for you so running this SQL is not necessary.
+If you're using Supabase, you'll also want to enable realtime updates for testing (with Agent 0) by running this SQL command:
+alter publication supabase_realtime add table messages;
+Required Fields
+When inserting a message into the messages table, the following fields are required:
+	•	session_id: The conversation session ID provided in the input parameters.
+	•	message: A JSON (jsonb) object containing the message details.
+
+Message Field Structure
+The message field must be a JSON object with the following structure (compatible with the AI agent node in n8n):
+For User Messages
+{
+  "type": "human",
+  "content": "User's input text"
+}
+For Agent Responses
+{
+  "type": "ai",
+  "content": "Agent's response text",
+  "data": {
+    "...additional info for the frontend..."
+  }
+}
+Field Descriptions
+	•	type: (String) Indicates the message source. Use "human" for user messages and "ai" for agent responses.
+	•	content: (String) The text content of the message.
+	•	data: (Object) Optional. Additional data for the frontend, matching the data field in your processing.
+Inserting into Supabase
+To insert a message into the messages table:
+	1	Use the session_id from the input parameters.
+	2	Create the message JSON object as per the structure above.
+	3	Insert a new record with the session_id and message fields.
+
+Example SQL-like pseudocode:
+INSERT INTO messages (session_id, message)
+VALUES ('<session_id>', '<message_json_object>');
+Note: If you are using a different PostgreSQL database, ensure that the table structure and insertion methods are compatible.
+Hosting and Deployment
+To ensure that your agent fully integrates with the autogen_studio's features, we offer to host and run your agent on our infrastructure. The biggest benefit to you is you don’t have to pay for the LLM usage! On top of that, this provides:
+	•	Consistency: By hosting the agent, we can ensure it adheres to all platform requirements, including security, scalability, and performance.
+	•	Feature Integration: Hosting the agent allows us to handle features like authentication, rate limiting, and logging without additional effort on your part.
+	•	Maintenance: Our team will manage the operational aspects, so you can focus on developing and improving your agent's capabilities.
+How It Works
+	1	Code Submission:
+	•	Provide us with your agent's codebase or the workflow JSON if it’s an n8n/Voiceflow agent, ensuring it follows the guidelines outlined in this document.
+	2	Deployment:
+	•	Our team will deploy the agent within our infrastructure, configuring it to work seamlessly with the autogen_studio.
+	3	Testing:
+	•	We'll perform comprehensive testing to ensure your agent functions correctly and efficiently.
+	4	Monitoring and Updates:
+	•	We'll monitor the agent's performance and work with you on any necessary updates or improvements.
+Information to Provide
+To integrate your agent into autogen_studio, please provide the following information:
+	•	Your Name: Your full name or your organization's name.
+	•	Your Email: Contact email address for communication.
+	•	Agent Name: A unique and descriptive name for your agent.
+	•	Agent Description: A brief description of your agent's functionality and purpose.
+	•	Agent Code/Workflow JSON: Everything we need to run the agent for you.
+	•	Handling Extra Data: Details on how the data field in your agent's response should be used by the frontend (if applicable). Include any specific frontend components or rendering instructions.
+	•	Credit URL: A URL that users can visit to learn more about your agent or your work. This can be a website, a GitHub repository, or any relevant link.
+
+Submit Your Agent
+Handling File Uploads
+When a user uploads files to your agent, they will be included in the input parameters as base64-encoded strings. This section expands on the file upload portion of the input parameters shown at the beginning of this guide.
+View Example File Agent
+Supported File Types
+	•	Images: PNG, JPEG, GIF
+	•	Documents: TXT, CSV, XLSX
+File Size Limits
+	•	Maximum file size: 5MB per file
+	•	Maximum files per message: 5 files
+
+File Upload Input Format
+Here is an expanded example of the input parameters when files are included:
+{
+  "query": "Here are some files to process",
+  "user_id": "user123",
+  "request_id": "req456",
+  "session_id": "sess789",
+  "files": [
+    {
+      "name": "data.csv",
+      "type": "text/csv",
+      "base64": "Y29sdW1uMSxjb2x1bW4yDQp2YWx1ZTEsdmFsdWUy"
+    },
+    {
+      "name": "image.png",
+      "type": "image/png",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    }
+  ]
+}
+
+File Object Properties
+	•	name: (String) The original filename
+	•	type: (String) The MIME type of the file
+	•	base64: (String) The file contents encoded in base64
+
+Processing Files
+When processing files in your agent:
+	•	Always validate the file type and size on your end
+	•	Decode the base64 string to get the file contents
+	•	Consider implementing rate limiting for file uploads
+	•	Handle errors gracefully and provide clear error messages
+
+Handling Extra Data
+If your agent includes additional data in the data field of the messages, you MUST provide a React component to display this data in the frontend. This component will be used to render any custom UI elements or visualizations specific to your agent.
+Frontend Component Requirements
+	•	Component Structure: Create a React component that accepts the following props:interface YourAgentProps {
+	•	  data: any;  // The data field from your agent's response
+	•	  handleSendMessage: (message: string, messageData?: string) => Promise<void>;
+	•	}
+	•	Styling: Use Tailwind CSS for styling to maintain consistency with the autogen_studio's design system.
+	•	Interactive Elements: If your component includes buttons or other interactive elements, use the handleSendMessage callback to communicate with your agent.
+	•	message vs messageData: message is by default what is used to display the user's message in the frontend and communicate with your agent. Use messageData to override just what is sent to your agent.
+Example Implementation
+For a complete example of a frontend component implementation, refer to the Voiceflow integration:View Example Component
+
+Integration Notes
+	•	Component Export: Export your component as the default export from a file named after your agent (e.g., YourAgentComponent.tsx).
+	•	Error Handling: Include appropriate error states and loading states in your component.
+	•	Type Safety: Define proper TypeScript interfaces for your data structures.
+Building an Agent with Voiceflow
+Voiceflow is integrated directly with the autogen_studio through their Dialog API. This means you can create conversational AI agents using Voiceflow's powerful visual builder and they'll automatically be compatible with our platform.
+Getting Started
+	•	Create your agent in Voiceflow using their visual builder
+	•	(Optional) Reference the Dialog API documentation for advanced use cases and custom actions
+	•	The autogen_studio will automatically handle the integration with Voiceflow's API
+Integration
+Our integration with Voiceflow is open source! For a detailed look, check out ourVoiceflow + autogen_studio integration. This shows:
+	•	How the Dialog API is used to manage conversations within the Studio
+	•	The custom frontend component for rendering Voiceflow's responses
+	•	Handling interactive elements like buttons and choices
+
+Building an Agent with n8n
+If you choose to build your agent using n8n, follow these steps:
+	1	Create a Webhook Node:
+	•	Set the method to POST and secure it using an authorization token (we will replace this with our own when we deploy your agent).
+	2	Process Input Parameters:
+	•	Use a Set node to extract and assign query, user_id, request_id, and session_id.
+	3	Store User Message:
+	•	Use the Supabase node to insert the user's message into the messages table using the provided structures.
+	4	Generate Agent Response:
+	•	Implement your logic using AI models or other services to process the query.
+	5	Store Agent Response:
+	•	Insert the agent's response into the messages table. You can also insert more than one agent message, and the frontend will display the messages as they come into the database!
+	6	Prepare the Response:
+	•	Use a Set node to create the response object with { "success": true } or { "success": false }.
+	7	Respond to autogen_studio:
+	•	Use the Respond to Webhook node to send back the response.
+Note: You can use the AI Agent node from n8n, and as long as you change the table to messages from the default n8n_chat_history, you don’t have to worry about creating the user or agent messages in the database!
+
+Building an Agent with Custom Code
+To build your agent using custom code:
+	1	Set Up the API Endpoint:
+	•	Create a POST endpoint using your preferred programming language and framework.
+	2	Implement Authentication:
+	•	Validate the Authorization header against an authorization token (we will replace this with our own when we deploy your agent).
+	3	Handle Input Parameters:
+	•	Parse the incoming JSON payload to extract query, user_id, request_id, and session_id.
+	4	Store User Message:
+	•	Insert the user's message into the messages table in the database.
+	5	Process the Query:
+	•	Use AI models or your custom logic to generate a response.
+	6	Store Agent Response:
+	•	Insert the agent's response into the messages table. You can also insert more than one agent message, and the frontend will display the messages as they come into the database!
+	7	Prepare the Response:
+	•	Create a JSON object containing { "success": true } or { "success": false }.
+	8	Respond to autogen_studio:
+	•	Send the JSON response back to autogen_studio.
+Note: Ensure your endpoint is robust, handles exceptions, and returns appropriate HTTP status codes.
+
+Testing Your Agent
+Before submitting your agent to the autogen_studio, it's crucial to thoroughly test it to ensure it works as expected. The best way to do this is using our Agent 0 Playground, which lets you test your local agent using the actual autogen_studio interface:
+Test in the Agent 0 Playground
+
+This will save you time by validating that your agent is fully compatible with the autogen_studio before submission. The playground provides the same interface and functionality as the main platform, making it the perfect testing environment.
+Local Testing:
+	•	Use tools like Postman or cURL to simulate requests from autogen_studio.
+	•	Verify that your agent handles input parameters correctly and produces the expected output.
+	•	Ensure messages are correctly stored in the database.
+	•	Test how your agent handles invalid inputs, missing parameters, or unauthorized access.
+	•	Ensure that appropriate error messages and HTTP status codes are returned.
+	•	Make sure your agent responds within the acceptable time frame (ideally under 60 seconds) to prevent timeouts.
+	•	Test your agent under different load conditions to ensure scalability.
+
+Best Practices
+Security:
+	•	Always validate input parameters to prevent injection attacks.
+	•	Secure your webhook endpoint using an authorization token you define yourself (we will replace this with our own when we deploy your agent).
+Performance:
+	•	Optimize your agent to respond quickly to avoid timeouts.
+Scalability:
+	•	Design your agent to handle multiple concurrent requests efficiently.
+Error Handling:
+	•	Return meaningful error messages and appropriate HTTP status codes.
+Logging:
+	•	Implement logging for monitoring and debugging purposes.
+Documentation:
+	•	Keep your code well-documented to facilitate maintenance and updates.
+Credit and Attribution
+We value the contributions of developers and want to ensure proper credit is given. By providing a Credit URL, users can learn more about you or your organization.
+Display:
+The frontend will display a link or attribution note associated with your agent’s responses.
+Purpose:
+This enhances transparency and allows users to explore your work further.
+
+Frequently Asked Questions
+Will autogen_studio handle hosting and running my agent?
+Yes, we offer to host and run your agent on our infrastructure. This ensures full integration with autogen_studio’s features and offloads the operational aspects from you. Additionally, you won’t have to pay for LLM usage. Please provide your agent’s codebase, and we’ll handle the rest.
+
+How should I handle the data field in the messages?
+The data field is optional and can include any additional information you want to pass to the frontend. Ensure it’s a valid JSON object and provide instructions on how it should be used.
+
+What if my agent doesn’t need to store any extra data?
+If you don’t have additional data to provide, you can omit the data field or include it as an empty object:
+"data": {}
+
+How do I secure my agent’s webhook endpoint?
+Use an authorization token to authenticate requests. Validate the Authorization header in incoming requests against this token (we will replace this with our own when we deploy your agent).
+
+Can I use a different database instead of Supabase?
+Yes, you can use any PostgreSQL-compatible database. However, using Supabase is preferred due to its seamless integration with our platform.
+
+How can I ensure my agent is added to the platform?
+Provide all the required information listed in the Information to Provide section. Our team will handle the integration process.
+
+What happens if my agent takes longer than 60 seconds to respond?
+autogen_studio may time out and return an error to the user. To prevent this, ensure your agent responds promptly, ideally within 60 seconds.
+Can I include additional endpoints or functionalities in my agent?
+Yes, but the primary interaction with autogen_studio should be through the specified webhook endpoint and data formats. Additional functionalities should not interfere with this integration.
+
+Who should I contact if I have questions or need assistance?
+Please reach out to Cole Medin at colemedin@ottomator.ai for any questions or assistance during development.
+By following this guide, you can create an AI agent that integrates smoothly with the autogen_studio. Your agent will be able to process user queries, manage conversation history, and enhance the user experience on our platform.
+Last Updated: 2024-12-23
+</file>
+
+<file path="models/agent_models.py">
+# Request/Response Models
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel
+
+
+@dataclass
+class ProcessedChunk:
+    """Represents a processed chunk of a document.
+
+    Attributes:
+        session_id (str): The ID of the session this chunk belongs to. This typically
+            identifies the context of the processing, allowing for grouping of related
+            chunks.
+        file_name (str): The name of the file the chunk originates from. This is used
+            for tracking the source of the information.
+        chunk_number (int): The sequential number of the chunk within the file. This
+            is useful for maintaining the original order of the text within the file.
+        title (str): The title of the chunk. This is often a short, descriptive
+            summary of the chunk's topic.
+        summary (str): A brief summary of the chunk's content. This provides a concise
+            overview of the main points of the chunk.
+        content (str): The actual text content of the chunk. This is the raw
+            text extracted from the document.
+        embedding (List[float]): A numerical representation (embedding) of the chunk's
+            content. This is used for semantic search and other machine learning tasks.
+            Embeddings capture the meaning of the text in a vector space.
+    """
+
+    session_id: str
+    file_name: str
+    chunk_number: int
+    title: str
+    summary: str
+    content: str
+    embedding: List[float]
+
+
+@dataclass
+class ProcessFoundBuzz:
+    """Represents a buzz (a specific piece of information or finding) identified during processing.
+
+    Attributes:
+        id (int): A unique identifier for the buzz. This ensures that each buzz can
+            be tracked and referenced individually.
+        buzz_type (str): The type or category of the buzz. This provides context about
+            what kind of information the buzz represents (e.g., "key takeaway",
+            "action item", "problem identified").
+        original_chat (str): The original text where the buzz was identified. This
+            allows for easy reference to the source of the buzz.
+    """
+
+    id: int
+    session_id: str
+    author: str
+    buzz_type: str
+    original_chat: str
+
+
+class AgentRequest(BaseModel):
+    """Represents a request sent to an agent.
+
+    This model encapsulates all necessary information for an agent to process a user's
+    request, including the query, user details, session context, and optional file
+    metadata.
+
+    Attributes:
+        query (str): The user's query or request. This is the main instruction or
+            question that the agent needs to address.
+        user_id (str): The ID of the user making the request. This identifies the
+            originator of the request, allowing for user-specific handling.
+        request_id (str): A unique ID for this specific request. This is used to track
+            and manage individual requests throughout the system.
+        session_id (str): The ID of the current session. This provides context for the
+            request, allowing agents to access and utilize relevant session data.
+        files (Optional[List[Dict[str, Any]]], optional): An optional list of file
+            metadata associated with the request. Each dictionary within the list
+            represents a file and may contain details such as file name, size,
+            and type. Defaults to None if no files are included in the request.
+    """
+
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+    files: Optional[List[Dict[str, Any]]] = None
+
+
+class AgentResponse(BaseModel):
+    """Represents a response from an agent.
+
+    This model provides a basic structure for agent responses, indicating the
+    success or failure of the request processing. More complex responses might
+    include additional fields to provide more detailed information.
+
+    Attributes:
+        success (bool): A boolean indicating whether the request was processed
+            successfully. A value of `True` indicates success, while `False`
+            indicates failure.
+    """
+
+    success: bool
+</file>
+
+<file path="models/youtube_models.py">
+from typing import Optional
+
+from constants.enums import BuzzStatusEnum
+from pydantic import BaseModel
+
+
+class StreamMetadata(BaseModel):
+    """
+    Represents metadata associated with a live stream.
+
+    This model holds basic information about a live stream, such as its title,
+    the channel title, and the URL of its thumbnail image.
+
+    Attributes:
+        title (Optional[str]): The title of the live stream. Defaults to an empty string.
+        channel_title (Optional[str]): The title of the channel hosting the live stream.
+            Defaults to an empty string.
+        thumbnail_url (Optional[str]): URL of the thumbnail image for the live stream.
+            Defaults to an empty string.
+    """
+
+    title: Optional[str] = ""
+    channel_title: Optional[str] = ""
+    thumbnail_url: Optional[str] = ""
+
+
+class StreamMetadataDB(StreamMetadata):
+    """
+    Represents stream metadata stored in a database, extending `StreamMetadata`.
+
+    This model includes all the attributes from `StreamMetadata` and adds
+    database-specific fields, such as session IDs, video IDs, chat IDs,
+    and the stream's activity status.
+
+    Attributes:
+        session_id (str): A unique identifier for the stream session.
+        video_id (str): The unique identifier of the video associated with the stream.
+        live_chat_id (str): The unique identifier for the live chat associated with the stream.
+        next_chat_page (Optional[str]): A token or URL for fetching the next page of
+            chat messages. Defaults to an empty string.
+        is_active (Optional[int]): An integer representing whether the stream is currently
+            active. 1 indicates active, 0 indicates inactive. Defaults to 1.
+    """
+
+    session_id: str
+    video_id: str
+    live_chat_id: str
+    next_chat_page: Optional[str] = ""
+    is_active: Optional[int] = 1
+
+
+class BuzzModel(BaseModel):
+    """
+    Represents a buzz, which is a generated response to a user interaction.
+
+    This model captures the essential information about a buzz, including its
+    type and the generated response text.
+
+    Attributes:
+        buzz_type (str): The type or category of the buzz.
+        generated_response (str): The generated response text.
+    """
+
+    buzz_type: str
+    generated_response: str
+
+
+class StreamBuzzModel(BuzzModel):
+    """
+    Represents a buzz associated with a specific stream, extending `BuzzModel`.
+
+    This model includes all attributes from `BuzzModel` and adds stream-specific
+    details, such as the session ID, the original chat message that triggered
+    the buzz, the author of that message, and the buzz status.
+
+    Attributes:
+        session_id (str): The unique identifier for the stream session.
+        original_chat (str): The original chat message that triggered the buzz.
+        author (str): The author of the original chat message.
+        buzz_status (Optional[int]): An integer representing the status of the buzz.
+            Defaults to 0, which is equivalent to `BuzzStatusEnum.FOUND.value`.
+    """
+
+    session_id: str
+    original_chat: str
+    author: str
+    buzz_status: Optional[int] = BuzzStatusEnum.FOUND.value
+
+
+class StreamBuzzDisplay(BaseModel):
+    """
+    Represents a buzz for display purposes, containing the original chat, author, and generated response.
+
+    This model is designed to provide all necessary information for displaying a buzz
+    in a user-friendly format, including the original chat, author, and the generated
+    response.
+
+    Attributes:
+        buzz_type (str): The type or category of the buzz.
+        original_chat (str): The original chat message that triggered the buzz.
+        author (str): The author of the original chat message.
+        generated_response (str): The generated response text.
+    """
+
+    buzz_type: str
+    original_chat: str
+    author: str
+    generated_response: str
+
+
+class WriteChatModel(BaseModel):
+    """
+    Represents data related to writing a chat message to a live stream.
+
+    This model holds all the necessary information for writing a chat message
+    to a live stream, including the session and chat IDs, retry count, the
+    reply text, an optional reply summary, and a flag indicating if the
+    message has been successfully written.
+
+    Attributes:
+        session_id (str): The unique identifier for the stream session.
+        live_chat_id (str): The unique identifier for the live chat associated
+            with the stream.
+        retry_count (Optional[int]): The number of times the message has been
+            attempted to be written. Defaults to 0.
+        reply (str): The text of the reply to be written.
+        reply_summary (Optional[str]): An optional summary of the reply.
+            Defaults to an empty string.
+        is_written (Optional[int]): An integer representing whether the message
+            has been successfully written. 1 indicates success, 0 indicates failure.
+            Defaults to 0.
+    """
+
+    session_id: str
+    live_chat_id: str
+    retry_count: Optional[int] = 0
+    reply: str
+    reply_summary: Optional[str] = ""
+    is_written: Optional[int] = 0
+
+class ChatIntent(BaseModel):
+    original_chat: str
+    author: str
+    intent: str
+</file>
+
+<file path="routers/chat_worker.py">
+import asyncio
+import json
+import re
+from collections import defaultdict
+from typing import Any, Dict, List
+
+from fastapi import APIRouter
+
+from agents.buzz_intern import buzz_intern_agent
+from agents.responder import responder_agent
+from constants.constants import YOUTUBE_LIVE_API_ENDPOINT
+from constants.enums import BuzzStatusEnum
+from constants.prompts import CHAT_ANALYSER_PROMPT, REPLY_SUMMARISER_PROMPT
+from logger import log_method
+from models.agent_models import ProcessFoundBuzz
+from models.youtube_models import ChatIntent, StreamBuzzModel, WriteChatModel
+from utils import supabase_util, youtube_util
+from utils.supabase_util import store_message
+
+# Create API router for managing live chats
+router = APIRouter()
+
+
+@log_method
+async def process_buzz():
+    """
+    Processes buzzes that are in the 'FOUND' state.
+
+    This function retrieves buzzes in the 'FOUND' state from the database,
+    updates their status to 'PROCESSING', and then uses a responder agent to
+    generate a response for each buzz. The generated response is stored back
+    in the database, and the buzz status is updated to 'ACTIVE'. If any error
+    occurs during the process, the buzz status is set back to 'FOUND'.
+
+    Raises:
+        Exception: If any error occurs during the processing of a buzz,
+            the exception is caught, logged, and re-raised after setting the
+            buzz status back to 'FOUND'.
+    """
+    found_buzz_list = await supabase_util.get_found_buzz()
+    found_buzz_object_list = [ProcessFoundBuzz(**buzz) for buzz in found_buzz_list]
+    if not found_buzz_object_list:
+        return
+    found_buzz_id_list = [buzz.id for buzz in found_buzz_object_list]
+    await supabase_util.update_buzz_status_batch_by_id(
+        id_list=found_buzz_id_list, buzz_status=BuzzStatusEnum.PROCESSING.value
+    )
+    for buzz in found_buzz_object_list:
+        try:
+            await asyncio.sleep(2)
+            response = await responder_agent.run(
+                user_prompt=f"Generate response within 300 words for this "
+                            f"{buzz.buzz_type.strip().upper()}:\n{buzz.original_chat}",
+                result_type=str,
+            )
+
+            current_buzz = await supabase_util.get_current_buzz(buzz.session_id)
+            if not current_buzz:
+                # Display buzz
+                buzz_message = {"buzz_type": buzz.buzz_type, "original_chat":
+                    buzz.original_chat, "author": buzz.author, "generated_response":
+                    response.data}
+                buzz_message_display = await buzz_intern_agent.run(
+                    f"""
+                1. Extract: `buzz_type`, `original_chat`, `author`, 
+                `generated_response` from the given json
+                2. Format and return the data in a readable, concise manner. Use 
+                spacing and line breaks for clarity, if required.\n{buzz_message}""")
+                await supabase_util.store_message(
+                    session_id=buzz.session_id,
+                    message_type="ai",
+                    content=buzz_message_display.data,
+                )
+
+            await supabase_util.update_buzz_response_by_id(
+                buzz_id=buzz.id, generated_response=response.data
+            )
+
+        except Exception as e:
+            print(f"Error>> process_buzz: {str(e)}")
+            await supabase_util.update_buzz_status_by_id(
+                buzz_id=buzz.id, buzz_status=BuzzStatusEnum.FOUND.value
+            )
+
+
+def filter_chat_message(chat: str) -> str:
+    """Filters out unnecessary chat messages before intent classification.
+
+    Removes small talk, one-word messages, and irrelevant content while
+    preserving meaningful text for intent classification.
+
+    Args:
+        chat: The chat message to filter.
+
+    Returns:
+        The filtered chat message, or an empty string if it's considered noise.
+    """
+    # Convert to lowercase to standardize comparison
+    chat = chat.strip().lower()
+
+    # 1. Remove one-word chats (unless it's meaningful)
+    if len(chat.split()) <= 2:
+        return ""  # Empty string indicates noise
+
+    # 2. Remove common small talk or greetings
+    small_talk_patterns = [
+        r"^hi$", r"^hello$", r"^hey$", r"^good morning$", r"^good evening$",
+        r"^how are you\?$", r"^what's up\?$", r"^how's it going\?$",
+        r"^lol$", r"^lmao$", r"^rofl$", r"^haha$", r"^hehe$", r"^great stream$",
+        r"^awesome content$", r"^nice to see you streaming$", r"^keep it up$"
+    ]
+    if any(re.match(pattern, chat) for pattern in small_talk_patterns):
+        return ""  # Empty string indicates noise
+
+    # 3. Filter out chats with just emojis or other uninformative content
+    if re.match(r"^[\U0001F600-\U0001F64F]+$", chat):  # Emoji-only message
+        return ""  # Empty string indicates noise
+
+    # 4. Optionally, filter messages with too many special characters or gibberish
+    if re.match(r"^[^\w\s]+$", chat):  # Non-alphanumeric, no words
+        return ""  # Empty string indicates noise
+
+    # If message passes the filters, return it as is
+    return chat
+
+
+@log_method
+async def process_chat_messages(chat_list: List[Dict[str, str]], session_id: str):
+    """
+    Processes a list of chat messages for a given session.
+
+    This function iterates through a list of chat messages, classifies
+    the intent of each message, and if the intent is not 'UNKNOWN', stores
+    the message as a 'buzz' in the database with a 'FOUND' status.
+    If any error occurs during the processing of a chat message, it logs the
+    error along with the chat message that caused the error.
+
+    Args:
+        chat_list (List[Dict[str, Any]]): A list of dictionaries, where each
+            dictionary represents a chat message and contains at least the keys
+            'original_chat' and 'author'.
+        session_id (str): The ID of the session to which the chat messages belong.
+
+    Raises:
+        Exception: If an error occurs during the processing of a chat message,
+            the exception is caught, logged, and not re-raised.
+    """
+    # Filter original chat
+    filtered_chat_list = []
+    for chat in chat_list:
+        if filter_chat_message(chat["original_chat"]):
+            filtered_chat_list.append(chat)
+
+    #  Can I get process the chat list in one go?
+    chat_intent_response = await buzz_intern_agent.run(
+        f"{CHAT_ANALYSER_PROMPT}\n{filtered_chat_list}", result_type=list[ChatIntent]
+    )
+    chat_intent_response_list = chat_intent_response.data
+
+    for chat_intent in chat_intent_response_list:
+        try:
+            await supabase_util.store_buzz(
+                StreamBuzzModel(
+                    session_id=session_id,
+                    original_chat=chat_intent.original_chat,
+                    author=chat_intent.author,
+                    buzz_status=BuzzStatusEnum.FOUND.value,
+                    buzz_type=chat_intent.intent.strip().upper(),
+                    generated_response="",
+                )
+            )
+        except Exception as e:
+            # Log the exception for the chat-level failure
+            print(f"Error processing chat: {chat_intent}. Exception: {e}")
+
+
+@log_method
+async def process_active_streams(active_streams: List[Dict[str, Any]]):
+    """
+    Processes all active streams.
+
+    This function iterates through a list of active streams, fetches the latest
+    chat messages for each stream using the YouTube API, and then processes the
+    chat messages. If any error occurs during the processing of a stream,
+    it logs the error along with the stream that caused the error.
+
+    Args:
+        active_streams (List[Dict[str, Any]]): A list of dictionaries, where each
+            dictionary represents an active stream and contains at least the keys
+            'session_id', 'live_chat_id', and 'next_chat_page'.
+
+    Raises:
+        Exception: If an error occurs during the processing of a stream,
+            the exception is caught, logged, and not re-raised.
+    """
+    for stream in active_streams:
+        try:
+            session_id, live_chat_id, next_chat_page = (
+                stream["session_id"],
+                stream["live_chat_id"],
+                stream["next_chat_page"],
+            )
+            chat_list = await youtube_util.get_live_chat_messages(
+                session_id, live_chat_id, next_chat_page
+            )
+            if not chat_list:
+                return
+
+            await process_chat_messages(chat_list, session_id)
+
+        except Exception as e:
+            # Log the exception for the stream-level failure
+            print(f"Error processing stream: {stream}. Exception: {e}")
+
+
+@log_method
+async def read_live_chats():
+    """
+    Reads and processes live chat messages from active YouTube streams.
+
+    This function retrieves all active stream sessions, fetches live chat
+    messages for each session using the YouTube API, and determines the intent
+    of each chat message. If the intent is one of [Question, Concern, Request],
+    the chat is stored in the database as a 'buzz'. It also updates the
+    `next_chat_page` token for pagination and deactivates streams if they
+    are no longer active. Finally, it calls `process_buzz` to generate
+    responses for the newly created buzzes.
+    """
+    # Get active stream sessions
+    active_streams = await supabase_util.get_active_streams()
+    if active_streams:
+        await process_active_streams(active_streams)
+    await process_buzz()
+
+
+@log_method
+async def group_chats_by_session_id(
+    unwritten_chats: List[Dict[str, Any]],
+) -> List[WriteChatModel]:
+    """
+    Groups unwritten chat messages by session ID, live chat ID, and retry count.
+
+    This function takes a list of unwritten chat messages and groups them
+    based on their session ID and live chat ID. It then summarizes the grouped
+    messages using buzz_intern_agent and creates `WriteChatModel`
+    instances for each group. The `WriteChatModel` instances contain the
+    original concatenated replies and the summarized reply.
+
+    Args:
+        unwritten_chats (List[Dict[str, Any]]): A list of dictionaries, where each
+            dictionary represents an unwritten chat message and contains at
+            least the keys 'session_id', 'live_chat_id', and 'reply'.
+
+    Returns:
+        List[WriteChatModel]: A list of `WriteChatModel` instances, each
+            representing a group of summarized chat messages.
+
+    Raises:
+        Exception: If an error occurs during the grouping or summarization
+            process, the exception is caught, logged, and re-raised.
+    """
+    try:
+        # Prepare the desired output
+        grouped_chats = defaultdict(lambda: defaultdict(list))
+
+        # Group chats by session_id, live_chat_id
+        for row in unwritten_chats:
+            grouped_chats[row["session_id"]][row["live_chat_id"]].append(row["reply"])
+
+        # Populate WriteChatModel instances
+        result: List[WriteChatModel] = []
+        for session_id, live_chat_groups in grouped_chats.items():
+            for live_chat_id, replies in live_chat_groups.items():
+                raw_reply = ". ".join(replies)
+                reply_summary = await buzz_intern_agent.run(
+                    user_prompt=f"{REPLY_SUMMARISER_PROMPT}\n{raw_reply}",
+                    result_type=str,
+                )
+                result.append(
+                    WriteChatModel(
+                        session_id=session_id,
+                        live_chat_id=live_chat_id,
+                        reply=raw_reply,
+                        reply_summary=reply_summary.data,
+                    )
+                )
+        return result
+    except Exception as e:
+        print(f"Error>> group_chats_by_session_id: {str(e)}")
+        raise
+
+
+@log_method
+async def write_live_chats():
+    """
+    Writes summarized chat replies to YouTube live chats.
+
+    This function retrieves unwritten chat replies from the database, groups them
+    by session ID and live chat ID, and then uses the YouTube API
+    to post the summarized replies to the corresponding live chats. It also
+    updates the database to indicate that the replies have been written and
+    stores a message in the database indicating that the bot has replied.
+    The function handles retries and deactivates streams if necessary.
+
+    Raises:
+        Exception: If any error occurs during the process, such as fetching
+            unwritten chats, grouping them, calling the YouTube API, or
+            updating the database, the exception is caught, logged, and
+            re-raised.
+    """
+    try:
+        # Get unwritten chats from YT_REPLY table
+        unwritten_chats_query_response = await supabase_util.get_unwritten_replies()
+        if not unwritten_chats_query_response:
+            return
+        grouped_chats: List[WriteChatModel] = await group_chats_by_session_id(
+            unwritten_chats_query_response
+        )
+
+        # Update status of those live_chat_id to PENDING
+        for reply in grouped_chats:
+            await supabase_util.mark_replies_pending(reply.live_chat_id)
+
+        # Call insert YouTube api on max retries in loop for each of the sessions
+        for reply in grouped_chats:
+            try:
+                params = {"part": "snippet"}
+                payload = json.dumps(
+                    {
+                        "snippet": {
+                            "liveChatId": f"{reply.live_chat_id}",
+                            "type": "textMessageEvent",
+                            "textMessageDetails": {
+                                "messageText": f"{reply.reply_summary}"
+                            },
+                        }
+                    }
+                )
+                await youtube_util.post_request_with_retries(
+                    url=YOUTUBE_LIVE_API_ENDPOINT,
+                    params=params,
+                    payload=payload,
+                )
+                await supabase_util.mark_replies_success(reply.live_chat_id)
+                await store_message(
+                    session_id=reply.session_id,
+                    message_type="ai",
+                    content=f"StreamBuzz Bot: Hey there! I have just dropped a reply in the live chat:\n{reply.reply_summary}\n— check it out!",
+                    data={"reply_dump": reply.model_dump()},
+                )
+            except Exception as e:
+                print(f"Error>> write_live_chats: {str(reply)}\n{str(e)}")
+                await supabase_util.mark_replies_failed(reply.live_chat_id)
+                raise
+    except Exception as e:
+        print(f"Error>> write_live_chats: {str(e)}")
+        raise
+
+
+@router.post("/read-chats", tags=["tasks"])
+async def read_chats_task():
+    """
+    API endpoint to initiate the reading of live chat messages.
+
+    This endpoint triggers the `read_live_chats` function, which handles
+    fetching and processing live chat messages from active YouTube streams.
+
+    Raises:
+        Exception: If an error occurs during the execution of
+            `read_live_chats`, the exception is caught, logged, and
+            not re-raised.
+    """
+    try:
+        print("Started async background task>> read_live_chats")
+        await read_live_chats()
+    except Exception as e:
+        print(f"Error>> read_chats_task: {str(e)}")
+
+
+@router.post("/write-chats", tags=["tasks"])
+async def write_chats_task():
+    """
+    API endpoint to initiate the writing of summarized chat replies.
+
+    This endpoint triggers the `write_live_chats` function, which handles
+    posting summarized chat replies to YouTube live chats.
+
+    Raises:
+        Exception: If an error occurs during the execution of
+            `write_live_chats`, the exception is caught, logged, and
+            not re-raised.
+    """
+    try:
+        print("Started async background task>> write_live_chats")
+        await write_live_chats()
+    except Exception as e:
+        print(f"Error>> write_chats_task: {str(e)}")
+</file>
+
+<file path="utils/intent_util.py">
+import re
+from typing import List
+
+from constants.constants import (CONFIDENCE_THRESHOLD, STREAMER_INTENT_EXAMPLES,
+                                 YOUTUBE_URL_REGEX)
+from constants.enums import StreamerIntentEnum
+from logger import log_method
+
+
+def contains_valid_youtube_url(user_query: str) -> bool:
+    """Checks if a given string contains a valid YouTube URL.
+
+    This function uses a regular expression to determine if the input string
+    matches the expected format of a YouTube URL.
+
+    Args:
+        user_query: The string to check for a YouTube URL.
+
+    Returns:
+        True if the string contains a valid YouTube URL, False otherwise.
+    """
+    return re.search(YOUTUBE_URL_REGEX, user_query) is not None
+
+
+def _simple_intent_match(text: str) -> tuple[StreamerIntentEnum, float]:
+    """Simple intent matching using string matching.
+    
+    Args:
+        text: Input text to classify
+        
+    Returns:
+        Tuple of (intent, confidence score)
+    """
+    text = text.lower()
+    max_score = 0
+    best_intent = StreamerIntentEnum.UNKNOWN
+    
+    for intent_str, examples in STREAMER_INTENT_EXAMPLES.items():
+        for example in examples:
+            # Simple word overlap score
+            example_words = set(example.lower().split())
+            text_words = set(text.split())
+            overlap = len(example_words.intersection(text_words))
+            total = len(example_words.union(text_words))
+            score = overlap / total if total > 0 else 0
+            
+            if score > max_score:
+                max_score = score
+                best_intent = StreamerIntentEnum[intent_str]
+    
+    return best_intent, max_score
+
+
+@log_method
+async def classify_streamer_intent(
+    messages: List[str], query: str
+) -> StreamerIntentEnum:
+    """Classifies the intent of a streamer based on previous messages and the latest query.
+
+    This function uses simple string matching to determine the streamer's intent.
+    It gives more weight to the latest query compared to previous messages.
+
+    Args:
+        messages: List of previous messages in the conversation
+        query: The latest query to classify
+
+    Returns:
+        The classified StreamerIntentEnum
+    """
+    # Give more weight to the latest query
+    query_intent, query_score = _simple_intent_match(query)
+    
+    # If query score is high enough, use it directly
+    if query_score >= CONFIDENCE_THRESHOLD:
+        # Special case for START_STREAM - must have YouTube URL
+        if query_intent == StreamerIntentEnum.START_STREAM and not contains_valid_youtube_url(query):
+            return StreamerIntentEnum.UNKNOWN
+        return query_intent
+    
+    # Otherwise consider previous messages
+    if messages:
+        prev_intents = [_simple_intent_match(msg)[0] for msg in messages[-3:]]
+        # If there's a consistent intent in previous messages, use it
+        if len(set(prev_intents)) == 1 and prev_intents[0] != StreamerIntentEnum.UNKNOWN:
+            return prev_intents[0]
+    
+    return StreamerIntentEnum.UNKNOWN
+</file>
+
+<file path="utils/rag_util.py">
+import asyncio
+import base64
+import json
+import os
+import re
+from typing import Any, Dict, List, Tuple
+
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+from agents.buzz_intern import buzz_intern_agent
+from constants.constants import (ACCEPTED_FILE_EXTENSION, ACCEPTED_FILE_MIME,
+                                 ACCEPTED_FILE_QUANTITY, CHUNK_SIZE,
+                                 EMBEDDING_DIMENSIONS, EMBEDDING_MODEL_NAME,
+                                 MAX_FILE_SIZE_B, MAX_FILE_SIZE_MB, SUMMARY, TITLE)
+from constants.prompts import TITLE_SUMMARY_PROMPT
+from exceptions.user_error import UserError
+from logger import log_method
+from models.agent_models import AgentRequest, ProcessedChunk
+from utils import supabase_util
+
+load_dotenv()
+
+
+@log_method
+async def get_title_and_summary(chunk: str) -> dict:
+    """Extracts the title and summary from a text chunk using a buzz_intern_agent.
+
+    This function uses buzz_intern_agent to process the input chunk and extract
+    the title and summary. It uses the `TITLE_SUMMARY_PROMPT` to guide the agent.
+
+    Args:
+        chunk: The input text string from which to extract the title and summary.
+
+    Returns:
+        A dictionary containing the extracted title and summary. If there's an
+        error during extraction, the dictionary will contain default error messages
+        for title and summary. The keys are 'title' and 'summary'.
+
+    Raises:
+        Any exception encountered during the extraction process is caught, printed to
+        the console, and default error messages are returned.
+    """
+    try:
+        completions = await buzz_intern_agent.run(
+            user_prompt=f"{TITLE_SUMMARY_PROMPT}\n{chunk[:500]}",
+            result_type=str
+        )
+        response_text = completions.data
+        if response_text.startswith("```json"):
+            response_text = re.sub(
+                r"```json\s(.*?)\s*```", r"\1", response_text, flags=re.DOTALL
+            )
+        response: dict = json.loads(response_text)
+        response[TITLE] = response.get(TITLE, "Error processing title")
+        response[SUMMARY] = response.get(SUMMARY, "Error processing summary")
+        return response
+    except Exception as e:
+        print(f"Error getting title and summary: {e}")
+        return {
+            TITLE: "Error processing title",
+            SUMMARY: "Error processing summary",
+        }
+
+
+@log_method
+async def validate_file(files: List[Dict[str, Any]]) -> str:
+    """Validates the uploaded file(s) against size, type, and quantity constraints.
+
+    This function checks if the number of uploaded files, their extensions, MIME types,
+    and sizes are within the allowed limits specified by constants.
+
+    Args:
+        files: A list of dictionaries, where each dictionary represents a file
+            and contains keys like 'name', 'type', and 'base64'.
+
+    Returns:
+        The base64 encoded string of the file content if the file is valid.
+
+    Raises:
+        UserError: If any of the following conditions are met:
+            - The number of files exceeds `ACCEPTED_FILE_QUANTITY`.
+            - The file extension does not match `ACCEPTED_FILE_EXTENSION`.
+            - The MIME type does not match `ACCEPTED_FILE_MIME`.
+            - The decoded file size exceeds `MAX_FILE_SIZE_B`.
+    """
+    if len(files) != ACCEPTED_FILE_QUANTITY:
+        raise UserError(
+            f"Only {ACCEPTED_FILE_QUANTITY} file is allowed. You uploaded "
+            f"{len(files)} files."
+        )
+    file = files[0]
+    if not file["name"].endswith(ACCEPTED_FILE_EXTENSION):
+        raise UserError(
+            f"Only {ACCEPTED_FILE_QUANTITY} {ACCEPTED_FILE_EXTENSION} file is allowed."
+        )
+    if file["type"] != ACCEPTED_FILE_MIME:
+        raise UserError(
+            f"Only {ACCEPTED_FILE_QUANTITY} {ACCEPTED_FILE_MIME} file is allowed."
+        )
+    base64_content = file.get("base64")
+    estimated_size = (len(base64_content) * 3) // 4 - base64_content.count("=")
+    if estimated_size > MAX_FILE_SIZE_B:
+        raise UserError(
+            f"File exceeds the maximum allowed size of {MAX_FILE_SIZE_MB} MB."
+        )
+    return base64_content
+
+
+@log_method
+async def get_file_contents(files: List[Dict[str, Any]]) -> Tuple[str, str]:
+    """Retrieves and decodes the content of a file from its base64 representation.
+
+    This function validates the file using `validate_file` and then decodes the
+    base64 content to a UTF-8 string. It also checks if the decoded file size
+    exceeds the allowed limit.
+
+    Args:
+        files: A list of dictionaries, where each dictionary represents a file
+            and contains keys like 'name' and 'base64'.
+
+    Returns:
+        A tuple containing the file name and the decoded file content as a string.
+
+    Raises:
+        UserError: If any of the following conditions are met:
+            - The file fails validation by `validate_file`.
+            - There's an error decoding the base64 content.
+            - The decoded file size exceeds `MAX_FILE_SIZE_B`.
+    """
+    base64_content = await validate_file(files)
+    try:
+        file_content = base64.b64decode(base64_content).decode("utf-8").strip()
+    except Exception:
+        raise UserError("Error decoding file content, invalid base64 encoding")
+    if len(file_content) > MAX_FILE_SIZE_B:
+        raise UserError(
+            f"File exceeds the maximum allowed size of {MAX_FILE_SIZE_MB} MB."
+        )
+    return files[0]["name"], file_content
+
+
+@log_method
+async def get_embedding(text: str) -> List[float]:
+    """Generates an embedding vector for a given text using the Gemini model.
+
+    This function uses the `google.generativeai` library to generate an embedding
+    vector for the provided text. It configures the API key from the environment
+    and uses the specified embedding model.
+
+    Args:
+        text: The input text string for which the embedding is to be generated.
+
+    Returns:
+        A list of floats representing the embedding vector. Returns a zero vector
+        of size `EMBEDDING_DIMENSIONS` if there's an error during embedding.
+
+    Raises:
+         Any exception encountered during the embedding process is caught, printed to the console, and a zero vector is returned.
+    """
+    try:
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        response = genai.embed_content(model=EMBEDDING_MODEL_NAME, content=text)
+        return response["embedding"]
+    except Exception as e:
+        print(f"Error getting embedding: {e}")
+        return [0] * EMBEDDING_DIMENSIONS  # Return zero vector on error
+
+
+@log_method
+async def process_chunk(
+    chunk_number: int, session_id: str, file_name: str, chunk: str
+) -> ProcessedChunk:
+    """Processes a single chunk of text to extract metadata and generate embeddings.
+
+    This function orchestrates the extraction of title and summary using
+    `get_title_and_summary`, generates embeddings using `get_embedding`, and
+    packages the results into a `ProcessedChunk` object.
+
+    Args:
+        chunk_number: The index of the chunk in the original document.
+        session_id: The unique ID of the user session.
+        file_name: The name of the file the chunk belongs to.
+        chunk: The text content of the chunk.
+
+    Returns:
+        A `ProcessedChunk` object containing the session ID, file name, chunk
+        number, extracted title, summary, content, and embedding vector.
+    """
+    # Get title and summary
+    extracted = await get_title_and_summary(chunk)
+
+    # Get embedding
+    embedding = await get_embedding(chunk)
+
+    return ProcessedChunk(
+        session_id=session_id,
+        file_name=file_name,
+        chunk_number=chunk_number,
+        title=extracted[TITLE],
+        summary=extracted[SUMMARY],
+        content=chunk,
+        embedding=embedding,
+    )
+
+
+@log_method
+async def chunk_text(text: str, chunk_size: int = CHUNK_SIZE) -> List[str]:
+    """Splits a text into chunks, respecting code blocks, paragraphs, and sentences.
+
+    This function splits a text into chunks of a specified size, prioritizing
+    splits at code blocks (```), then paragraphs (\n\n), and finally sentences
+    (. ). It aims to create semantically meaningful chunks.
+
+    Args:
+        text: The input text string to be split into chunks.
+        chunk_size: The desired maximum size of each chunk. Defaults to `CHUNK_SIZE`.
+
+    Returns:
+        A list of strings, where each string is a chunk of the original text.
+        Chunks are split at code blocks (```), paragraphs (\n\n), or sentences (. )
+        when possible, prioritizing code blocks, then paragraphs, then sentences.
+    """
+    chunks = []
+    start = 0
+    text_length = len(text)
+
+    while start < text_length:
+        # Calculate end position
+        end = start + chunk_size
+
+        # If we're at the end of the text, just take what's left
+        if end >= text_length:
+            chunks.append(text[start:].strip())
+            break
+
+        # Try to find a code block boundary first (```)
+        chunk = text[start:end]
+        code_block = chunk.rfind("```")
+        if code_block != -1 and code_block > chunk_size * 0.3:
+            end = start + code_block
+
+        # If no code block, try to break at a paragraph
+        elif "\n\n" in chunk:
+            # Find the last paragraph break
+            last_break = chunk.rfind("\n\n")
+            if (
+                last_break > chunk_size * 0.3
+            ):  # Only break if we're past 30% of chunk_size
+                end = start + last_break
+
+        # If no paragraph break, try to break at a sentence
+        elif ". " in chunk:
+            # Find the last sentence break
+            last_period = chunk.rfind(". ")
+            if (
+                last_period > chunk_size * 0.3
+            ):  # Only break if we're past 30% of chunk_size
+                end = start + last_period + 1
+
+        # Extract chunk and clean it up
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        # Move start position for next chunk
+        start = max(start + 1, end)
+
+    return chunks
+
+
+@log_method
+async def process_and_store_document(
+    session_id: str, file_name: str, file_content: str
+):
+    """Processes a document by splitting it into chunks, extracting metadata, and storing it.
+
+    This function orchestrates the processing of a document by first splitting it into
+    chunks using `chunk_text`, then processes each chunk in parallel using
+    `process_chunk`, and finally stores the processed chunks in a database
+    in parallel using `supabase_util.insert_chunk`.
+
+    Args:
+        session_id: The unique ID of the user session.
+        file_name: The name of the file being processed.
+        file_content: The text content of the file.
+    """
+    # Split into chunks
+    chunks = await chunk_text(file_content)
+
+    # Process chunks in parallel
+    tasks = [
+        process_chunk(index, session_id, file_name, chunk)
+        for index, chunk in enumerate(chunks)
+    ]
+    processed_chunks = await asyncio.gather(*tasks)
+
+    # Store chunks in parallel
+    insert_tasks = [supabase_util.insert_chunk(chunk) for chunk in processed_chunks]
+    await asyncio.gather(*insert_tasks)
+
+
+@log_method
+async def create_knowledge_base(request: AgentRequest) -> None:
+    """Creates a knowledge base from a user-uploaded document.
+
+    This function handles the creation of a knowledge base from a document,
+    including retrieving the file content, checking for and deleting any existing
+    knowledge base associated with the session, processing the new document to
+    create a new knowledge base, and storing a success message in the database.
+
+    Args:
+        request: An `AgentRequest` object containing the session ID and file
+            information.
+    """
+    response_string = ""
+    file_name, file_content = await get_file_contents(request.files)
+    previous_file_name: str = await supabase_util.get_kb_file_name(request.session_id)
+    if previous_file_name:
+        await supabase_util.delete_previous_kb_entries(request.session_id)
+        response_string += f"Discarding previous knowledge base {previous_file_name}.\n"
+    await process_and_store_document(request.session_id, file_name, file_content)
+    response_string += (
+        f"Knowledge base built with {file_name} successfully and ready for use. "
+        f"Analyzing a response to your query ..."
+    )
+    # Display this to user and use his query in unknown buzz_type
+    await supabase_util.store_message(
+        session_id=request.session_id,
+        message_type="ai",
+        content=response_string,
+        data={"request_id": request.request_id},
+    )
+</file>
+
+<file path="utils/supabase_util.py">
+from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+from fastapi import HTTPException
+from pydantic_ai.messages import (ModelRequest, ModelResponse, TextPart,
+                                  UserPromptPart)
+
+from constants.constants import (CONVERSATION_CONTEXT, MESSAGES, MODEL_RETRIES,
+                                 STREAMER_KB, SUPABASE_CLIENT, YT_BUZZ,
+                                 YT_REPLY, YT_STREAMS)
+from constants.enums import BuzzStatusEnum, StateEnum
+from models.agent_models import ProcessedChunk
+from models.youtube_models import (StreamBuzzModel, StreamMetadataDB,
+                                   WriteChatModel)
+
+# Load environment variables
+load_dotenv()
+
+
+# MESSAGES table queries
+async def fetch_human_session_history(session_id: str, limit: int = 10) -> list[str]:
+    """Fetches the most recent human conversation history for a given session.
+
+    This function retrieves a specified number of the most recent messages from the
+    `MESSAGES` table in Supabase, filtering for messages of type "human" and
+    ordering them by creation time in descending order. It then returns a list of
+    message contents, limited by the `CONVERSATION_CONTEXT` constant.
+
+    Args:
+        session_id: The unique identifier of the session.
+        limit: The maximum number of messages to retrieve. Defaults to 10.
+
+    Returns:
+        A list of strings, where each string is the content of a human message.
+        The list is limited by the `CONVERSATION_CONTEXT` constant.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(MESSAGES)
+            .select("*")
+            .eq("session_id", session_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+        messages = []
+        for msg in response.data:
+            if msg["message"]["type"] == "human":
+                messages.append(msg["message"]["content"])
+        return messages[:CONVERSATION_CONTEXT]
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch_human_session_history: {str(e)}"
+        )
+
+
+async def fetch_conversation_history(
+    session_id: str, limit: int = 10
+) -> list[ModelRequest | ModelResponse]:
+    """Fetches the most recent conversation history for a given session.
+
+    This function retrieves a specified number of the most recent messages from the
+    `MESSAGES` table in Supabase, ordering them by creation time in descending
+    order. It then converts the messages into a list of `ModelRequest` or
+    `ModelResponse` objects, based on the message type ("human" or other). The
+    list is returned in chronological order (oldest to newest).
+
+    Args:
+        session_id: The unique identifier of the session.
+        limit: The maximum number of messages to retrieve. Defaults to 10.
+
+    Returns:
+        A list of `ModelRequest` or `ModelResponse` objects, representing the
+        conversation history. The list is in chronological order.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(MESSAGES)
+            .select("*")
+            .eq("session_id", session_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+        # Convert to list and reverse to get chronological order
+        conversation_history = response.data[::-1]
+
+        # Convert conversation history to format expected by Pydantic AI
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = (
+                ModelRequest(parts=[UserPromptPart(content=msg_content)])
+                if msg_type == "human"
+                else ModelResponse(parts=[TextPart(content=msg_content)])
+            )
+            messages.append(msg)
+        return messages
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch_conversation_history: {str(e)}"
+        )
+
+
+async def store_message(
+    session_id: str, message_type: str, content: str, data: Optional[Dict] = None
+):
+    """Stores a message in the Supabase `MESSAGES` table.
+
+    This function inserts a new message into the `MESSAGES` table, including the
+    session ID, message type, content, and any optional data.
+
+    Args:
+        session_id: The unique identifier of the session.
+        message_type: The type of the message (e.g., "human", "ai").
+        content: The content of the message.
+        data: An optional dictionary containing additional message data. Defaults to None.
+
+    Raises:
+        HTTPException: If an error occurs during the database insertion, with a 500
+        status code and error details.
+    """
+    message_obj = {"type": message_type, "content": content}
+    if data:
+        message_obj["data"] = data
+
+    try:
+        SUPABASE_CLIENT.table(MESSAGES).insert(
+            {"session_id": session_id, "message": message_obj}
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to store_message: {str(e)}"
+        )
+
+
+# YT_STREAMS table queries
+async def get_active_streams() -> List[Dict[str, Any]]:
+    """Retrieves all active streams from the `YT_STREAMS` table.
+
+    This function queries the `YT_STREAMS` table to find all rows where the
+    `is_active` flag is set to `StateEnum.YES.value`.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents an active stream.
+        Each dictionary contains the 'session_id', 'live_chat_id', and
+        'next_chat_page' keys.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(YT_STREAMS)
+            .select("session_id, live_chat_id, next_chat_page")
+            .eq("is_active", StateEnum.YES.value)
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_active_streams: {str(e)}"
+        )
+
+
+async def get_active_stream(session_id: str) -> Optional[StreamMetadataDB]:
+    """Retrieves the active stream metadata for a given session.
+
+    This function queries the `YT_STREAMS` table to find the active stream
+    associated with the provided `session_id`. A stream is considered active if
+    its `is_active` flag is set to `StateEnum.YES.value`.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Returns:
+        A `StreamMetadataDB` object containing the metadata of the active stream
+        if found, otherwise None.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(YT_STREAMS)
+            .select("*")
+            .eq("session_id", session_id)
+            .eq("is_active", StateEnum.YES.value)
+            .execute()
+        )
+        if not response.data:
+            return None
+        active_stream = response.data[0]
+        return StreamMetadataDB(
+            session_id=active_stream["session_id"],
+            video_id=active_stream["video_id"],
+            live_chat_id=active_stream["live_chat_id"],
+            next_chat_page=active_stream["next_chat_page"],
+            is_active=active_stream["is_active"],
+        )
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_active_stream: {str(e)}"
+        )
+
+
+async def start_stream(stream_metadata_db: StreamMetadataDB):
+    """Stores stream metadata for a given session in the `YT_STREAMS` table.
+
+    This function inserts a new row into the `YT_STREAMS` table with the provided
+    stream metadata.
+
+    Args:
+        stream_metadata_db: A `StreamMetadataDB` object containing the stream metadata.
+
+    Raises:
+        HTTPException: If an error occurs during the database insertion, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_STREAMS).insert(
+            {
+                "session_id": stream_metadata_db.session_id,
+                "video_id": stream_metadata_db.video_id,
+                "live_chat_id": stream_metadata_db.live_chat_id,
+                "next_chat_page": stream_metadata_db.next_chat_page,
+                "is_active": stream_metadata_db.is_active,
+            }
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start_stream: {str(e)}")
+
+
+async def deactivate_existing_streams(session_id: str):
+    """Deactivates all streams associated with a given session.
+
+    This function updates the `is_active` flag to `StateEnum.NO.value` for all
+    rows in the `YT_STREAMS` table that match the provided `session_id`.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_STREAMS).update({"is_active": StateEnum.NO.value}).eq(
+            "session_id", session_id
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to deactivate_existing_streams: {str(e)}"
+        )
+
+
+async def update_next_chat_page(live_chat_id: str, next_chat_page: str):
+    """Updates the `next_chat_page` for an active stream of a given session.
+
+    This function updates the `next_chat_page` column in the `YT_STREAMS` table
+    for the active stream associated with the provided `live_chat_id`. A stream is
+    considered active if its `is_active` flag is set to `StateEnum.YES.value`.
+
+    Args:
+        live_chat_id: The unique identifier of the sessionstream.
+        next_chat_page: The new value for the `next_chat_page` column.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_STREAMS).update({"next_chat_page": next_chat_page}).eq(
+            "live_chat_id", live_chat_id
+        ).eq("is_active", StateEnum.YES.value).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update_next_chat_page: {str(e)}"
+        )
+
+
+# YT_BUZZ table queries
+async def store_buzz(buzz: StreamBuzzModel):
+    """Stores a buzz event in the `YT_BUZZ` table.
+
+    This function inserts a new row into the `YT_BUZZ` table with the provided
+    buzz details.
+
+    Args:
+        buzz: A `StreamBuzzModel` object containing the buzz details.
+
+    Raises:
+        HTTPException: If an error occurs during the database insertion, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_BUZZ).insert(
+            {
+                "buzz_type": buzz.buzz_type,
+                "session_id": buzz.session_id,
+                "original_chat": buzz.original_chat,
+                "author": buzz.author,
+                "generated_response": buzz.generated_response,
+                "buzz_status": BuzzStatusEnum.FOUND.value,
+            }
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store_buzz: {str(e)}")
+
+
+async def get_current_buzz(session_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves the most recent active buzz for a given session.
+
+    This function queries the `YT_BUZZ` table to find the most recent active buzz
+    associated with the provided `session_id`. A buzz is considered active if its
+    `buzz_status` is set to `BuzzStatusEnum.ACTIVE.value`. It returns the
+    `buzz_type`, `original_chat`, `author`, and `generated_response` of the
+    found buzz.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Returns:
+        A dictionary containing the `buzz_type`, `original_chat`, `author`, and
+        `generated_response` of the current active buzz, or None if no active
+        buzz is found.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(YT_BUZZ)
+            .select("buzz_type, original_chat, author, generated_response")
+            .eq("session_id", session_id)
+            .eq("buzz_status", BuzzStatusEnum.ACTIVE.value)
+            .order("created_at")
+            .order("id")
+            .limit(1)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_current_buzz: {str(e)}"
+        )
+
+
+async def mark_current_buzz_inactive(session_id: str):
+    """Marks the most recent active buzz as inactive for a given session.
+
+    This function updates the `buzz_status` to `BuzzStatusEnum.INACTIVE.value` for
+    the most recent active buzz in the `YT_BUZZ` table that matches the provided
+    `session_id`. A buzz is considered active if its `buzz_status` is set to
+    `BuzzStatusEnum.ACTIVE.value`.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(YT_BUZZ)
+            .select("id")
+            .eq("session_id", session_id)
+            .eq("buzz_status", BuzzStatusEnum.ACTIVE.value)
+            .order("created_at")
+            .order("id")
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            SUPABASE_CLIENT.table(YT_BUZZ).update(
+                {"buzz_status": BuzzStatusEnum.INACTIVE.value}
+            ).eq("id", response.data[0]["id"]).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update_current_buzz_inactive: {str(e)}"
+        )
+
+
+async def get_found_buzz() -> list[Dict[str, Any]]:
+    """Retrieves all buzz events with a status of "FOUND".
+
+    This function queries the `YT_BUZZ` table to retrieve all rows where the
+    `buzz_status` is set to `BuzzStatusEnum.FOUND.value`.
+
+    Returns:
+        A list of dictionaries, where each dictionary contains the `id`,
+        `buzz_type`, and `original_chat` of a found buzz event.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(YT_BUZZ)
+            .select("id, session_id, author, buzz_type, original_chat")
+            .eq("buzz_status", BuzzStatusEnum.FOUND.value)
+            .order("created_at")
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_found_buzz: {str(e)}"
+        )
+
+
+async def update_buzz_status_by_id(buzz_id: int, buzz_status: str):
+    """Updates the status of a specific buzz event by its ID.
+
+    This function updates the `buzz_status` column in the `YT_BUZZ` table for the
+    row that matches the provided `id`.
+
+    Args:
+        buzz_id: The unique identifier of the buzz event to update.
+        buzz_status: The new status to set for the buzz event.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_BUZZ).update({"buzz_status": buzz_status}).eq(
+            "id", buzz_id
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update_buzz_status: {str(e)}"
+        )
+
+
+async def update_buzz_status_by_session_id(session_id: str, buzz_status: int):
+    """Updates the status of all buzz events for a given session.
+
+    This function updates the `buzz_status` column in the `YT_BUZZ` table for all
+    rows that match the provided `session_id`.
+
+    Args:
+        session_id: The unique identifier of the session.
+        buzz_status: The new status to set for the buzz events.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_BUZZ).update({"buzz_status": buzz_status}).eq(
+            "session_id", session_id
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read_existing_buzz: {str(e)}"
+        )
+
+
+async def update_buzz_status_batch_by_id(id_list: list[int], buzz_status: int):
+    """Updates the status of multiple buzz events by their IDs.
+
+    This function updates the `buzz_status` column in the `YT_BUZZ` table for all
+    rows that match the provided list of `id_list`.
+
+    Args:
+        id_list: A list of unique identifiers of the buzz events to update.
+        buzz_status: The new status to set for the buzz events.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_BUZZ).update({"buzz_status": buzz_status}).in_(
+            "id", id_list
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update_buzz_status: {str(e)}"
+        )
+
+
+async def update_buzz_response_by_id(buzz_id: int, generated_response: str):
+    """Updates the response of a specific buzz event by its ID.
+
+    This function updates the `buzz_status` to `BuzzStatusEnum.ACTIVE.value` and
+    the `generated_response` column in the `YT_BUZZ` table for the row that
+    matches the provided `id`.
+
+    Args:
+        buzz_id: The unique identifier of the buzz event to update.
+        generated_response: The new generated response to set for the buzz event.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_BUZZ).update(
+            {
+                "buzz_status": BuzzStatusEnum.ACTIVE.value,
+                "generated_response": generated_response,
+            }
+        ).eq("id", buzz_id).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update_buzz_response: {str(e)}"
+        )
+
+
+# YT_REPLY table queries
+async def store_reply(reply: WriteChatModel):
+    """Stores a chat reply in the `YT_REPLY` table.
+
+    This function inserts a new row into the `YT_REPLY` table with the provided
+    reply details.
+
+    Args:
+        reply: A `WriteChatModel` object containing the reply details.
+
+    Raises:
+        HTTPException: If an error occurs during the database insertion, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_REPLY).insert(
+            {
+                "session_id": reply.session_id,
+                "live_chat_id": reply.live_chat_id,
+                "retry_count": reply.retry_count,
+                "reply": reply.reply,
+                "is_written": StateEnum.NO.value,
+            }
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store_reply: {str(e)}")
+
+
+async def get_unwritten_replies() -> list[Dict[str, Any]]:
+    """Retrieves unwritten chat replies from the `YT_REPLY` table.
+
+    This function queries the `YT_REPLY` table to retrieve all rows where the
+    `is_written` flag is set to `StateEnum.NO.value` and the `retry_count` is less
+    than `MODEL_RETRIES`.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents an unwritten
+        chat reply, containing 'session_id', 'live_chat_id', and 'reply' keys.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(YT_REPLY)
+            .select("session_id, live_chat_id, reply")
+            .eq("is_written", StateEnum.NO.value)
+            .lt("retry_count", MODEL_RETRIES)
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_unwritten_chats: {str(e)}"
+        )
+
+
+async def mark_replies_pending(live_chat_id: str):
+    """Marks unwritten replies as pending for a given session.
+
+    This function updates the `is_written` flag to `StateEnum.PENDING.value` for
+    all rows in the `YT_REPLY` table that match the provided `live_chat_id` and
+    have an `is_written` flag set to `StateEnum.NO.value`.
+
+    Args:
+        live_chat_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_REPLY).update(
+            {"is_written": StateEnum.PENDING.value}
+        ).eq("live_chat_id", live_chat_id).eq("is_written", StateEnum.NO.value).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read_existing_buzz: {str(e)}"
+        )
+
+
+async def mark_replies_success(live_chat_id: str):
+    """Marks pending replies as successfully written for a given session.
+
+    This function updates the `is_written` flag to `StateEnum.YES.value` for all
+    rows in the `YT_REPLY` table that match the provided `live_chat_id` and have an
+    `is_written` flag set to `StateEnum.PENDING.value`.
+
+    Args:
+        live_chat_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_REPLY).update({"is_written": StateEnum.YES.value}).eq(
+            "live_chat_id", live_chat_id
+        ).eq("is_written", StateEnum.PENDING.value).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read_existing_buzz: {str(e)}"
+        )
+
+
+async def mark_replies_failed(live_chat_id: str):
+    """Marks pending replies as failed and increments the retry count for a given session.
+
+    This function updates the `is_written` flag to `StateEnum.NO.value` and
+    increments the `retry_count` by 1 for all rows in the `YT_REPLY` table that
+    match the provided `live_chat_id` and have an `is_written` flag set to
+    `StateEnum.PENDING.value`.
+
+    Args:
+        live_chat_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_REPLY).update(
+            {"is_written": StateEnum.NO.value}
+        ).inc({"retry_count": 1}).eq("live_chat_id", live_chat_id).eq(
+            "is_written", StateEnum.PENDING.value
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update replies: {str(e)}"
+        )
+
+
+async def deactivate_replies(session_id: str):
+    """Deactivates all replies for a given session.
+
+    This function updates the `is_written` flag to `StateEnum.YES.value` for all
+    rows in the `YT_REPLY` table that match the provided `session_id`.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database update, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(YT_REPLY).update({"is_written": StateEnum.YES.value}).eq(
+            "session_id", session_id
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read_existing_buzz: {str(e)}"
+        )
+
+
+# STREAMER_KB table queries
+async def get_kb_file_name(session_id: str) -> Optional[str]:
+    """Retrieves the file name of the knowledge base for a given session.
+
+    This function queries the `STREAMER_KB` table to find the `file_name`
+    associated with the provided `session_id`.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Returns:
+        The file name of the knowledge base if found, otherwise None.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = (
+            SUPABASE_CLIENT.table(STREAMER_KB)
+            .select("file_name")
+            .eq("session_id", session_id)
+            .execute()
+        )
+        return response.data[0]["file_name"] if response.data else None
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_previous_kb_file_name: {str(e)}"
+        )
+
+
+async def delete_previous_kb_entries(session_id: str):
+    """Deletes all knowledge base entries for a given session.
+
+    This function deletes all rows in the `STREAMER_KB` table that match the
+    provided `session_id`.
+
+    Args:
+        session_id: The unique identifier of the session.
+
+    Raises:
+        HTTPException: If an error occurs during the database deletion, with a 500
+        status code and error details.
+    """
+    try:
+        SUPABASE_CLIENT.table(STREAMER_KB).delete().eq(
+            "session_id", session_id
+        ).execute()
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete_previous_kb_entries: {str(e)}"
+        )
+
+
+async def insert_chunk(chunk: ProcessedChunk):
+    """Inserts a processed chunk into the `STREAMER_KB` table.
+
+    This function inserts a new row into the `STREAMER_KB` table with the
+    details of the provided processed chunk.
+
+    Args:
+        chunk: A `ProcessedChunk` object containing the chunk details.
+
+    Returns:
+        The result of the insertion operation.
+
+    Raises:
+        HTTPException: If an error occurs during the database insertion, with a 500
+        status code and error details.
+    """
+    try:
+        data = {
+            "session_id": chunk.session_id,
+            "file_name": chunk.file_name,
+            "chunk_number": chunk.chunk_number,
+            "title": chunk.title,
+            "summary": chunk.summary,
+            "content": chunk.content,
+            "embedding": chunk.embedding,
+        }
+
+        result = SUPABASE_CLIENT.table(STREAMER_KB).insert(data).execute()
+        print(f"Inserted chunk {chunk.chunk_number} for {chunk.session_id}")
+        return result
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to insert_chunk: {chunk=}\n{str(e)}"
+        )
+
+
+async def get_matching_chunks(
+    query_embedding: List[float], session_id: str
+) -> list[Dict[str, Any]]:
+    """Retrieves matching knowledge base chunks for a given query embedding.
+
+    This function uses the `match_streamer_knowledge` RPC function in Supabase to
+    find the most relevant chunks in the `STREAMER_KB` table based on the
+    provided `query_embedding` and `session_id`. The number of matching chunks
+    returned is limited by the `CONVERSATION_CONTEXT` constant.
+
+    Args:
+        query_embedding: A list of floats representing the query embedding.
+        session_id: The unique identifier of the session.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents a matching
+        knowledge base chunk.
+
+    Raises:
+        HTTPException: If an error occurs during the database query, with a 500
+        status code and error details.
+    """
+    try:
+        response = SUPABASE_CLIENT.rpc(
+            "match_streamer_knowledge",
+            {
+                "query_embedding": query_embedding,
+                "user_session_id": session_id,
+                "match_count": CONVERSATION_CONTEXT,
+            },
+        ).execute()
+
+        return response.data
+    except Exception as e:
+        print(f"Error>> Failed at supabase_util: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get_matching_chunks: {str(e)}"
+        )
+</file>
+
+<file path="utils/youtube_util.py">
+import json
+import os
+import re
+import time
+from urllib.parse import parse_qs, urlparse
+
+import requests
+from cachetools.func import ttl_cache
+from dotenv import load_dotenv
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from requests import HTTPError
+
+from constants.constants import (ALLOWED_DOMAINS, OAUTH_TOKEN_URI, YOUTUBE_API_ENDPOINT,
+                                 YOUTUBE_LIVE_API_ENDPOINT, YOUTUBE_SSL)
+from constants.enums import BuzzStatusEnum
+from exceptions.user_error import UserError
+from logger import log_method
+from utils import supabase_util
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Retrieve and parse the dictionary
+YOUTUBE_API_KEY_BUNCHES_ENV = json.loads(os.getenv("YOUTUBE_API_KEY_BUNCHES"))
+
+
+@ttl_cache(ttl=3600)
+def get_youtube_api_key_bunches():
+    youtube_api_key_bunches = []
+    for key_bunch in YOUTUBE_API_KEY_BUNCHES_ENV:
+        creds = Credentials(
+            None,  # No initial access token
+            refresh_token=key_bunch["refresh_token"],
+            token_uri=OAUTH_TOKEN_URI,
+            client_id=key_bunch["client_id"],
+            client_secret=key_bunch["client_secret"],
+            scopes=[YOUTUBE_SSL]
+        )
+        if not creds.valid:
+            creds.refresh(Request())
+            print("Token refreshed successfully.")
+        key_bunch["access_token"] = creds.token
+        youtube_api_key_bunches.append(key_bunch)
+
+    return youtube_api_key_bunches
+
+
+@log_method
+async def validate_and_extract_youtube_id(url: str) -> str:
+    """
+    Validates a YouTube URL and extracts the video ID if the URL is valid.
+
+    This function parses the provided URL, checks if the domain is valid
+    (either 'youtu.be' or 'youtube.com'), and extracts the 11-character
+    alphanumeric video ID from the URL. It supports standard, shortened,
+    and embed URL formats.
+
+    Args:
+        url (str): The YouTube URL to validate and parse.
+
+    Returns:
+        str: The extracted video ID if the URL is valid.
+
+    Raises:
+        UserError: If the provided URL is invalid due to an invalid domain,
+                   invalid path, or invalid video ID format.
+        Exception: If there's any other unexpected error during the process.
+    """
+    try:
+        url_pattern = r"(https?://|www\.)\S+"
+        match = re.search(url_pattern, url)
+        if not match:
+            raise UserError("No URL found in the text.")
+
+        # Parse the YouTube URL
+        url = match.group()
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc
+        path = parsed_url.path
+        query = parse_qs(parsed_url.query)
+
+        # Check if the domain is valid
+        if domain not in ALLOWED_DOMAINS:
+            raise UserError(f"Invalid YouTube domain: {domain}")
+
+        # Extract video ID based on URL format
+        if "youtu.be" in domain:
+            # Shortened URL
+            video_id = path[1:]  # Skip leading '/'
+        elif "youtube.com" in domain:
+            # Standard URL or embed URL
+            if path == "/watch" and "v" in query:
+                video_id = query["v"][0]
+            elif path.startswith("/embed/"):
+                video_id = path.split("/embed/")[1]
+            else:
+                raise UserError(f"Invalid YouTube video URL path: {path}")
+        else:
+            raise UserError("Unrecognized YouTube URL format.")
+
+        # Validate video ID format (11-character alphanumeric)
+        if not re.match(r"^[a-zA-Z0-9_-]{11}$", video_id):
+            raise UserError(f"Invalid YouTube video ID: {video_id}")
+        return video_id
+    except UserError as ue:
+        print(f"Error validating and extracting YouTube ID: {str(ue)}")
+        raise
+    except Exception as e:
+        print(f"Error validating and extracting YouTube ID: {str(e)}")
+        raise
+
+
+@log_method
+async def get_stream_metadata(video_id: str, session_id: str) -> dict:
+    """
+    Retrieves stream metadata for a given YouTube video ID using the YouTube API.
+
+    This function takes a YouTube video ID, calls the YouTube API to get
+    live-streaming details and snippet information, and returns the API response.
+    It uses a retry mechanism with multiple API keys if the initial request fails.
+
+    Args:
+        video_id (str): The YouTube video ID to fetch metadata for.
+        session_id (str): The session ID associated with the request.
+
+    Returns:
+        dict: The JSON response from the YouTube API containing stream metadata.
+
+    Raises:
+        UserError: If there's an error related to the user input or API usage.
+        Exception: If there's any other unexpected error during the process.
+    """
+    try:
+        params = {
+            "part": "liveStreamingDetails,snippet",
+            "id": video_id,
+        }
+        response = await get_request_with_retries(
+            YOUTUBE_API_ENDPOINT, params, session_id, use_keys=True
+        )
+
+        return response
+    except UserError as ue:
+        print(f"Error>> get_stream_metadata: {str(ue)}")
+        raise
+    except Exception as e:
+        print(f"Error>> get_stream_metadata: {str(e)}")
+        raise
+
+
+@log_method
+async def post_request_with_retries(
+        url: str, params: dict, payload: dict, use_keys: bool = False
+) -> dict:
+    """
+    Makes a POST request with retries using multiple API keys.
+
+    This function iterates through a list of API keys, attempting to make a POST
+    request to the specified URL. If a request fails, it retries with the next key
+    after a short delay. The function handles both API key authentication and
+    bearer token authentication based on the `use_keys` flag.
+
+    Args:
+        url (str): The URL to make the POST request to.
+        params (dict): The parameters to include in the POST request.
+        payload (dict): The payload to include in the POST request.
+        use_keys (bool): If True, uses 'api_key' for authentication;
+                        otherwise, uses 'access_token'. Defaults to False.
+
+    Returns:
+        dict: The JSON response from the POST request if successful.
+
+    Raises:
+        HTTPError: If all API keys fail or the maximum number of retries is reached.
+    """
+    api_key_bunches = get_youtube_api_key_bunches()
+    for attempt, key_dict in enumerate(api_key_bunches):
+        if use_keys:
+            params["key"] = key_dict["api_key"]
+            response = requests.post(url, params=params, data=payload, timeout=10)
+        else:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key_dict['access_token']}",
+            }
+            response = requests.post(
+                url, headers=headers, params=params, data=payload, timeout=10
+            )
+
+        try:
+            if response.status_code == 200:
+                return response.json()
+
+            # Log the failure
+            print(
+                f"Attempt {attempt + 1}: {response.status_code=}\nBody="
+                f"{response.json()}. Retrying..."
+            )
+
+        except requests.exceptions.RequestException as e:
+            # Log the exception
+            print(
+                f"Error>> {str(e)}\nAttempt {attempt + 1}: {response.status_code=}\n"
+                f"body={response.json()}. Retrying..."
+            )
+
+        # Retry after a short delay
+        time.sleep(2)
+
+    # If all attempts fail
+    raise HTTPError("All API keys failed or maximum retries reached.")
+
+
+@log_method
+async def get_request_with_retries(
+        url: str, params: dict, session_id: str, use_keys: bool = True
+) -> dict:
+    """Makes a GET request with retries using multiple API keys.
+
+    This function iterates through a list of API keys, attempting to make a GET
+    request to the specified URL. If a request fails, it retries with the next key
+    after a short delay. The function handles both API key authentication and
+    bearer token authentication based on the `use_keys` flag.
+
+    Args:
+        url (str): The URL to make the GET request to.
+        params (dict): The parameters to include in the GET request.
+        session_id (str): The session ID associated with the request.
+        use_keys (bool): If True, uses 'api_key' for authentication;
+                        otherwise, uses 'access_token'. Defaults to True.
+
+    Returns:
+        dict: The JSON response from the GET request if successful.
+
+    Raises:
+        HTTPError: If all API keys fail or the maximum number of retries is reached.
+    """
+    api_key_bunches = get_youtube_api_key_bunches()
+    for attempt, key_dict in enumerate(api_key_bunches):
+        if use_keys:
+            params["key"] = key_dict["api_key"]
+            response = requests.get(url, params=params, timeout=10)
+        else:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key_dict['access_token']}",
+            }
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+
+        try:
+            if response.status_code == 200:
+                return response.json()
+            error_reason = None
+            if 400 <= response.status_code < 500:
+                error_reason = (
+                    response.json()
+                    .get("error", {})
+                    .get("errors", [{}])[0]
+                    .get("reason")
+                )
+            if response.status_code == 400:
+                print(f"Bad Request (400): {error_reason}\nBreaking...")
+                break
+            elif response.status_code == 403 and error_reason == "liveChatEnded":
+                print("Live Chat Ended: Deactivating stream and breaking...")
+                await deactivate_stream(
+                    session_id=session_id,
+                    message="The current YouTube Live Stream has ended. You can explore the buzz so far, but replies are disabled. Start a new stream anytime!",
+                )
+                break
+            else:
+                print(
+                    f"Attempt {attempt + 1}: {response.status_code=}\nBody="
+                    f"{response.json()}. Retrying..."
+                )
+
+        except requests.exceptions.RequestException as e:
+            # Log the exception
+            print(
+                f"Error>> {str(e)}\nAttempt {attempt + 1}: {response.status_code=}\n"
+                f"body={response.json()}. Retrying..."
+            )
+
+        # Retry after a short delay
+        time.sleep(2)
+
+    # If all attempts fail
+    raise HTTPError("All API keys failed, maximum retries reached or bad request.")
+
+
+@log_method
+async def deactivate_stream(session_id: str, message: str = None) -> None:
+    """
+    Deactivates all streams and marks all replies as inactive for a given session.
+
+    This function uses the provided session ID to deactivate existing streams
+    associated with the session and marks all replies as inactive. This is
+    typically done when a new stream is being processed for the same session.
+
+    Args:
+        session_id (str): The session ID for which to mark streams as unavailable
+                          and replies as inactive.
+        message (str, optional): A message to store as an agent response.
+                                 Defaults to None.
+
+    Raises:
+        Exception: If there is an error during the deactivation process.
+    """
+    try:
+        await supabase_util.deactivate_existing_streams(session_id)
+        await supabase_util.deactivate_replies(session_id)
+        if message:
+            # Store agent's response
+            await supabase_util.store_message(
+                session_id=session_id,
+                message_type="ai",
+                content=message,
+                data={"session_id": f"Deactivated {session_id}"},
+            )
+    except Exception as e:
+        print(f"Error>> deactivate_stream: {session_id=}\n{str(e)}")
+        raise
+
+
+@log_method
+async def deactivate_session(session_id: str) -> None:
+    """Deactivates all streams and marks all buzz as inactive for a given session.
+
+    This function deactivates streams associated with the session, and updates
+    the buzz status to inactive for all buzz entries associated with the
+    given session ID. This is typically used when a user prompts a new link
+    in the session.
+
+    Args:
+        session_id (str): The session ID for which to deactivate streams and
+                         mark buzz as inactive.
+
+    Raises:
+        Exception: If there is an error during the deactivation or update process.
+    """
+    try:
+        await deactivate_stream(session_id)
+        await supabase_util.update_buzz_status_by_session_id(
+            session_id, BuzzStatusEnum.INACTIVE.value
+        )
+    except Exception as e:
+        print(f"Error>> deactivate_session: {session_id=}\n{str(e)}")
+        raise
+
+
+@log_method
+async def get_live_chat_messages(session_id: str, live_chat_id: str,
+                                 next_chat_page: str) -> list:
+    """
+    Retrieves live chat messages from YouTube using the Live Chat API.
+
+    This function fetches live chat messages from a specified YouTube live chat,
+    formats the messages, and updates the next page token.
+
+    Args:
+        session_id (str): The session ID associated with the request.
+        live_chat_id (str): The YouTube live chat ID to fetch messages from.
+        next_chat_page (str): The token for the next page of chat messages.
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a chat
+              message with 'original_chat' and 'author' keys.
+
+    Raises:
+        Exception: If there's an error during the API request or data processing.
+    """
+    params = {"part": "snippet, authorDetails", "liveChatId": live_chat_id}
+    if next_chat_page and next_chat_page.strip():
+        params["pageToken"] = next_chat_page.strip()
+    # Fetch live chat messages
+    live_chat_response = await get_request_with_retries(
+        url=YOUTUBE_LIVE_API_ENDPOINT,
+        params=params,
+        session_id=session_id,
+        use_keys=True,
+    )
+
+    # Extract chats as a list of dictionaries with updated displayName formatting
+    chats = [
+        {
+            "original_chat": item.get("snippet").get("displayMessage"),
+            "author": (
+                f"@{item.get('authorDetails').get('displayName')}"
+                + (
+                    " (owner)"
+                    if item.get("authorDetails").get("isChatOwner", False)
+                    else ""
+                )
+                + (
+                    " (sponsor)"
+                    if item.get("authorDetails").get("isChatSponsor", False)
+                    else ""
+                )
+                + (
+                    " (verified)"
+                    if item.get("authorDetails").get("isVerified", False)
+                    else ""
+                )
+                + (
+                    " (moderator)"
+                    if item.get("authorDetails").get("isChatModerator", False)
+                    else ""
+                )
+            ),
+        }
+        for item in live_chat_response.get("items", [])
+    ]
+
+    # Extract next_chat_page and update the next chat page token
+    next_chat_page = live_chat_response.get("nextPageToken", "")
+    await supabase_util.update_next_chat_page(live_chat_id, next_chat_page)
+
+    return chats
+</file>
+
+<file path="youtube_credentials/.gitignore">
+client_secrets.json
+token.pickle
+</file>
+
+<file path="youtube_credentials/get_youtube_tokens.py">
+#!/usr/bin/env python3
+"""
+Script to get YouTube OAuth tokens through desktop app flow
+"""
+
+import os
+import pickle
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# If modifying these scopes, delete the file token.pickle.
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.force-ssl'  # Full access to YouTube account
+]
+
+def get_credentials():
+    """Gets valid user credentials from storage or initiates OAuth2 flow."""
+    creds = None
+    
+    # Try to load existing credentials
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+    
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            # Load client secrets from your downloaded client_secrets.json file
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'client_secrets.json',
+                SCOPES
+            )
+            
+            print("\nStarting OAuth flow...")
+            creds = flow.run_local_server(
+                port=0,  # Let it pick any available port
+                success_message='The authentication flow has completed. You may close this window.'
+            )
+        
+        # Save the credentials for the next run
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
+    
+    print("\nHere are your tokens:")
+    print(f"Access Token: {creds.token}")
+    print(f"Refresh Token: {creds.refresh_token}")
+    print("\nAdd these to your .env file!")
+
+if __name__ == '__main__':
+    # Enable OAuthlib debugging
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+    get_credentials()
+</file>
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".env.example">
+# LLM
+OPEN_ROUTER_API_KEY = ""
+GEMINI_API_KEY = ""
+
+# Supabase
+SUPABASE_URL = ""
+SUPABASE_SERVICE_KEY = ""
+SUPABASE_ANON_KEY = ""
+
+# Agent 0
+API_BEARER_TOKEN = ""
+
+# YouTube API Keys in the following format
+YOUTUBE_API_KEY_BUNCHES = '[{"api_key":"API_KEY_1","client_id":"CLIENT_ID_1","client_secret":"CLIENT_SECRET_1","refresh_token":"REFRESH_TOKEN_1","access_token":"ACCESS_TOKEN_1","extra":"EXTRA_1"}]'
+</file>
+
+<file path=".gitignore">
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# UV
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#uv.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#pdm.lock
+#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
+#   in version control.
+#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+.idea/
+api-samples/
+*.bkp
+
+# PyPI configuration file
+.pypirc
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
+COPY . .
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+# Feel free to change sample_supabase_agent to sample_postgres_agent
+CMD ["sh", "-c", "uvicorn streambuzz:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="logger.py">
+import logging
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - [%(levelname)s] - %(message)s",
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
+
+from functools import wraps
+
+
+def log_method(func):
+    """Decorator to log entry, exit, and errors for functions."""
+
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        logger.info(f"Entering: {func.__name__}()")
+        try:
+            result = await func(*args, **kwargs)
+            logger.info(f"Exiting: {func.__name__}()")
+            return result
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}(): {e}", exc_info=True)
+            raise
+
+    return wrapper
+</file>
+
+<file path="queries.sql">
+-- Agent 0 messages
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+create table messages (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone null default CURRENT_TIMESTAMP,
+  session_id text not null,
+  message jsonb not null,
+  constraint messages_pkey primary key (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_messages_session_id on messages using btree (session_id) TABLESPACE pg_default;
+create index IF not exists idx_messages_created_at on messages using btree (created_at) TABLESPACE pg_default;
+alter publication supabase_realtime add table messages;
+
+-- RAG knowledge
+create extension if not exists vector;
+
+create table streamer_knowledge (
+  id bigserial not null,
+  session_id text not null,
+  file_name character varying not null,
+  chunk_number integer not null,
+  title character varying not null,
+  summary character varying not null,
+  content text not null,
+  embedding vector(768),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  constraint streamer_knowledge_pkey primary key (id),
+  constraint streamer_knowledge_session_id_chunk_number_key unique (session_id, chunk_number)
+) TABLESPACE pg_default;
+
+create index IF not exists streamer_knowledge_embedding_idx on streamer_knowledge using ivfflat (embedding vector_cosine_ops) TABLESPACE pg_default;
+
+
+-- Create a function to search for documentation chunks
+create function match_streamer_knowledge (
+  query_embedding vector(768),
+  user_session_id text,
+  match_count int default 5
+) returns table (
+  id bigint,
+  session_id text,
+  chunk_number integer,
+  title varchar,
+  summary varchar,
+  content text,
+  similarity float
+)
+language plpgsql
+as $$
+#variable_conflict use_column
+begin
+  return query
+  select
+    id,
+    session_id,
+    chunk_number,
+    title,
+    summary,
+    content,
+    1 - (streamer_knowledge.embedding <=> query_embedding) as similarity
+  from streamer_knowledge
+  where user_session_id = session_id
+  order by streamer_knowledge.embedding <=> query_embedding
+  limit match_count;
+end;
+$$;
+
+
+-- YouTube Sessionstream
+create table youtube_streams (
+  id bigint generated by default as identity not null,
+  created_at timestamp with time zone not null default now(),
+  is_active smallint not null default '1'::smallint,
+  session_id text not null,
+  video_id text not null,
+  live_chat_id text not null,
+  next_chat_page character varying not null default ''::character varying,
+  constraint youtube_streams_pkey primary key (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_youtube_streams_session_id on youtube_streams using btree (session_id) TABLESPACE pg_default;
+create index IF not exists idx_youtube_streams_live_chat_id on youtube_streams using btree (live_chat_id) TABLESPACE pg_default;
+create index IF not exists idx_youtube_streams_created_at on youtube_streams using btree (created_at) TABLESPACE pg_default;
+
+
+-- YouTube Live Chat Buzz
+create table youtube_buzz (
+  id bigint generated by default as identity not null,
+  created_at timestamp with time zone not null default now(),
+  buzz_type text not null,
+  session_id text not null,
+  original_chat text not null,
+  author text not null,
+  generated_response text not null,
+  buzz_status smallint not null default '0'::smallint,
+  constraint youtube_buzz_pkey primary key (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_youtube_buzz_session_id on youtube_buzz using btree (session_id) TABLESPACE pg_default;
+create index IF not exists idx_youtube_buzz_created_at on youtube_buzz using btree (created_at) TABLESPACE pg_default;
+
+
+-- Streamer Replies
+create table youtube_reply (
+  id bigint generated by default as identity not null,
+  created_at timestamp with time zone not null default now(),
+  session_id text null,
+  live_chat_id text null,
+  retry_count smallint null default '0'::smallint,
+  reply text null,
+  is_written smallint null default '0'::smallint,
+  constraint youtube_reply_pkey primary key (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_youtube_reply_session_id on youtube_reply using btree (session_id) TABLESPACE pg_default;
+create index IF not exists idx_youtube_reply_live_chat_id on youtube_reply using btree (live_chat_id) TABLESPACE pg_default;
+create index IF not exists idx_youtube_reply_created_at on youtube_reply using btree (created_at) TABLESPACE pg_default;
+</file>
+
+<file path="README.md">
+# StreamBuzz 🚀
+
+Author: [Mohammed Hammaad](https://github.com/hammaadworks)
+
+## **Index**
+
+1. [Intro](#your-ai-powered-youtube-live-stream-chat-moderator)
+2. [Why StreamBuzz?](#why-streambuzz)
+   - [The Solution](#the-solution)
+   - [Usage](#usage)
+   - [Benefits](#benefits)
+   - [Features](#features)
+3. [Getting Started](#getting-started)
+   - [Installation](#installation)
+     - [Configuration](#configuration)
+     - [Running StreamBuzz](#running-streambuzz)
+4. [Demo & Architecture](#demo--architecture)
+   - [Demo Gallery](#demo-gallery)
+     - [Images](#images)
+     - [Videos](#videos)
+     - [Architecture Diagrams](#architecture-diagrams)
+5. [Project Nuances and Future Scope](#project-nuances-and-future-scope)
+   - [Current Limitations](#current-limitations)
+   - [Future Scope](#future-scope)
+6. [Acknowledgments](#acknowledgments-)
+
+---
+
+## **Your AI-powered YouTube Live Stream Chat Moderator**
+
+**Attention Streamers!!**
+
+Tired of drowning in a tsunami of chat messages while trying to present to your audience? StreamBuzz to the rescue! This AI sidekick filters key messages, handles FAQs, and posts replies—so you can focus on being the rockstar streamer you were born to be.
+
+---
+
+## **Why StreamBuzz?**
+
+Live streaming is booming, with over **2 billion monthly YouTube users**. Streamers educate, entertain, and engage, but juggling an avalanche of chat messages **while presenting** is like trying to play chess on a roller coaster. 🎢 Important questions, concerns, and requests get lost in the flood, making chat management feel impossible.
+
+### **The Solution**
+
+StreamBuzz **filters the noise, highlights key messages, and automates replies**, so you can engage without stress. No more hunting through chat chaos—just smooth sailing! ⛵
+
+<p align="center">
+  <img src="./media/image/feature-map.png" width="60%" alt="StreamBuzz feature map">
+</p>
+<p align="center"><b>StreamBuzz Feature Map</b>
+</p>
+
+<p align="center">
+  <img src="./media/demo.gif" width="70%" alt="StreamBuzz Demo GIF">
+</p>
+<p align="center"><b>StreamBuzz Live!</b><em>WIP: Updating soon!</em></p>
+
+---
+
+### **Usage**
+
+1. Go to autogen_studio to try [StreamBuzz]()
+2. Pick a YouTube Live Stream, and chat to get started.
+3. StreamBuzz filters and prioritizes chat messages (buzz) in the background. 
+   - StreamBuzz intelligently processes multilingual chats, too.
+4. Navigate through the **real-time buzz list** using natural language.
+   - With sentences like, `get current buzz` or `get next buzz`.
+5. Post replies **directly from the chat interface**—error-free and neatly summarized.
+   - StreamBuzz background worker takes care of correcting typos, summarizing and posting your replies.
+6. Upload a text file to build a knowledge base and supercharge your responses. ⚡
+
+All in all, StreamBuzz is the ultimate **companion and chat moderator** for YouTube Live Streamers. Think of it as your chat butler. ☕
+
+Note, for the autogen_studio, the transformers package had to be removed because it made the container way too large. User message classification has
+been configured in a slightly different way that might not be as powerful as the original implementation but the agent still functions the same!
+
+---
+
+### **Benefits**
+
+**🎯 Focus on Content** – Let StreamBuzz handle chat while you do your thing.\
+**🔍 Better Engagement** – Important questions, concerns, and requests **stand out**.\
+**⏳ Saves Time** – Generates replies for buzz (important messages), reducing your mental load.\
+**🛠️ Customizable** – Update your knowledge base, and StreamBuzz **adapts automatically**.\
+**💬 Improves Viewer Experience** – Ensures timely, relevant, typo-free responses.
+
+---
+
+### **Features**
+
+🔹 **AI Chat Moderation** – Extracts key messages (buzz) from an ocean of chat spam. Navigate buzz at your own pace.\
+🔹 **Suggested Replies** – Auto-generates responses and allows customization via a text-based knowledge base.\
+🔹 **RAG (Retrieval-Augmented Generation)** – Smarter responses for streamers and chat queries.\
+🔹 **Seamless YouTube Integration** – Works directly with YouTube Live Chat **in real time**.
+
+---
+
+## **Getting Started**
+
+### **Installation**
+
+```bash
+# Clone the repository
+git clone https://github.com/hammaadworks/streambuzz.git
+cd streambuzz
+
+# Create a virtual environment (optional)
+python -m venv .venv
+source ./.venv/bin/activate
+
+# Install dependencies
+pip install -Ur requirements.txt
+```
+
+
+### **Configuration**
+
+1. Fill in your keys as specified in the `.env.example` file. 
+   - Use your model of choice by changing variables in `constants.py` under model section.
+   - Paste your YouTube credentials in `.env` file as specified in `.env.example` file.
+    **Note: Hackathon organisers, kindly contact me at hammaadworks@gmail.com for YouTube Credentials to get the project started**
+2. Create database tables using the DDL commands provided in `queries.sql` file.
+3. Set up the user interface using **Agent 0 by Ottomator.ai** ([Agent 0](https://studio.ottomator.ai/agent/0)).
+
+
+### **Running StreamBuzz**
+1. Set Environment Variable in `.env` file
+
+    ```bash
+    # Copy .env.example to .env and set your keys in .env file
+    cp .env.example .env
+    ```
+
+2. Serve the FastAPI app
+
+    ```bash
+    fastapi-cli dev streambuzz.py --port 8001 --reload
+    ```
+
+    Alternatively, you can use `uvicorn`:
+
+    ```bash
+    uvicorn streambuzz:app --host 0.0.0.0 --port 8001
+    ```
+
+---
+
+## **Demo & Architecture**
+
+### **Demo Gallery**
+
+#### **Experience StreamBuzz in Action!**
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=YOUR_VIDEO_ID">
+    <img src="https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg" alt="StreamBuzz Demo" width="600">
+  </a>
+</p>
+
+<p align="center"><b>Click the thumbnail to watch the demo on YouTube! 🚀</b></p>
+
+*WIP: Uploading to YouTube in progress, Updating this asap!! Stay tuned :)*
+
+#### **Images**
+
+<p align="center">
+  <img src="./media/image/start_stream.png" width="60%" alt="Start Chat Moderation">
+</p>
+<p align="center"><b>1. Start chat moderation with ease.</b></p>
+
+
+<p align="center">
+  <img src="./media/image/buzz_queue.png" width="60%" alt="Chat Navigation">
+</p>
+<p align="center"><b>2. Navigate through chat messages effortlessly.</b></p>
+
+
+<p align="center">
+  <img src="./media/image/up_to_date.png" width="60%" alt="Caught Up">
+</p>
+<p align="center"><b>3. Stay up to date with all key chats. 🎉</b></p>
+
+
+<p align="center">
+  <img src="./media/image/post_reply_buzz.png" width="60%" alt="Reply Integration">
+</p>
+<p align="center"><b>4. Seamless reply integration with YouTube Live Chat.</b></p>
+
+
+<p align="center">
+  <img src="./media/image/post_reply.png" width="60%" alt="YouTube Reply">
+</p>
+<p align="center"><b>5. Replies posted within a timeframe of 60 seconds on YouTube Live Chat.</b>
+</p>
+
+#### Videos
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=TPPxOZ4SpSk">
+    <img src="https://img.youtube.com/vi/TPPxOZ4SpSk/maxresdefault.jpg" alt="StreamBuzz RAG Demo" width="600">
+  </a>
+</p>
+
+<p align="center"><b>StreamBuzz RAG Demo</b></p>
+
+### **Architecture Diagrams**
+
+<p align="center">
+  <img src="./media/image/agents.png" width="70%" alt="StreamBuzz Architecture">
+</p>
+<p align="center"><b>A Moderator Crew of 5 Agents to your rescue!</b></p>
+
+*WIP: Proofreading in progress, Updating this asap!! Stay tuned :)*
+
+---
+
+## Project Nuances and Future Scope
+
+### Current Limitations
+1. **OAuth Support**  
+   - Currently unavailable. Implementing OAuth support would allow replies to be posted on behalf of the streamer using their Google account.
+
+2. **One Stream per Chat Session**  
+   - Only one stream can be moderated per chat session.  
+   - If a request to moderate another stream is made, the previous stream is deactivated, and a new session is initiated.
+
+3. **Post-Stream Replies**  
+   - Replies cannot be posted after a YouTube stream ends.  
+   - However, unviewed buzz will remain accessible for review.
+
+4. **Buzz Navigation**  
+   - Navigation through previous buzz is not supported; only forward navigation is possible.
+
+5. **Single File RAG Support**  
+   - Only one text file can be uploaded per chat session.  
+   - Uploading a new file deletes the knowledge base from the previous file. Enhancements can be made to support multiple files of various formats.
+
+### Future Scope
+- **OAuth Integration**: Enable seamless posting of replies using the streamer’s Google account.
+- **Multi-Stream Moderation**: Allow moderation of multiple streams in a single session without resetting.
+- **Post-Stream Interaction**: Extend functionality to post replies even after the stream has ended.
+- **Enhanced Buzz Navigation**: Implement backward navigation for buzz messages.
+- **Multi-File Support**: Develop features to handle multiple files of various formats within a single session.
+
+---
+
+## **Acknowledgments**  
+
+StreamBuzz was created as part of the **oTTomator autogen_studio Hackathon**.  
+Huge shoutout to [**Cole Medin**](https://github.com/coleam00) and the [**Ottomator AI Team**](https://studio.ottomator.ai/)  
+for hosting this incredible event and pushing the boundaries of AI-powered automation! 🎉  
+
+A massive thank you to the **open-source community** for their contributions, making cutting-edge technology accessible to all.  
+Special appreciation for projects like **[Pydantic AI](https://ai.pydantic.dev/)** and others, 
+your work makes innovations like StreamBuzz possible!  
+
+To all **content creators** who educate, share knowledge, and make resources more accessible—you are shaping the future!  
+Special mentions go to:  
+
+- 🎥 [**Cole Medin**](https://www.youtube.com/@ColeMedin) – Breaking down AI, automation, and building cool stuff.  
+- 🎥 [**Your Tech Bud Codes**](https://www.youtube.com/@YourTechBudCodes) – Making tech & coding easier for everyone.  
+
+---
+
+### **Special Thanks to the Global Streamer Community** 🎙️✨  
+
+Most importantly, **a heartfelt thanks to the global streamer community**—the educators, entertainers, and innovators  
+who make live streaming a hub of knowledge and engagement.  
+
+You inspire us to build tools that make your work easier and your content even better.  
+**This is for you!** 🚀
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+APScheduler==3.11.0
+cachetools==5.5.1
+fastapi==0.115.7
+fastapi-cli==0.0.7
+google-generativeai==0.8.4
+openai==1.60.2
+protobuf==5.29.3
+pydantic==2.10.6
+pydantic_ai==0.0.20
+python-dotenv==1.0.1
+Requests==2.32.3
+supabase==2.12.0
+google-auth==2.38.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+</file>
+
+<file path="streambuzz.py">
+import os
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from agents import orchestrator
+from agents.buzz_intern import buzz_intern_agent
+from constants.constants import (CHAT_READ_INTERVAL, CHAT_WRITE_INTERVAL,
+                                 CONVERSATION_CONTEXT)
+from exceptions.user_error import UserError
+from models.agent_models import AgentRequest, AgentResponse
+from routers import chat_worker
+from routers.chat_worker import read_live_chats, write_live_chats
+from utils.supabase_util import (fetch_conversation_history,
+                                 fetch_human_session_history, store_message)
+
+# Load environment variables
+load_dotenv()
+
+# Create the scheduler instance
+scheduler = AsyncIOScheduler()
+
+
+# Define lifespan context manager
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """
+    Manages the application's lifespan, specifically starting and stopping the scheduler.
+
+    This context manager is used by FastAPI to handle startup and shutdown events.
+    It initializes the background scheduler with jobs for reading and writing live chats,
+    starts the scheduler, and ensures it's properly shut down when the application exits.
+
+    Args:
+        _: The FastAPI application instance (unused).
+
+    Yields:
+        None: The context manager yields control back to FastAPI after starting the scheduler
+            and when the application is shutting down.
+    """
+    # Prevent duplicate jobs if app restarts
+    if not scheduler.get_job("read_live_chats"):
+        scheduler.add_job(
+            read_live_chats,
+            "interval",
+            seconds=CHAT_READ_INTERVAL,
+            id="read_live_chats",
+        )
+
+    if not scheduler.get_job("write_live_chats"):
+        scheduler.add_job(
+            write_live_chats,
+            "interval",
+            seconds=CHAT_WRITE_INTERVAL,
+            id="write_live_chats",
+        )
+
+    # Start the scheduler
+    scheduler.start()
+    print("Scheduler started...")
+
+    # Yield control back to FastAPI
+    yield
+
+    # Shutdown the scheduler when the app stops
+    scheduler.shutdown()
+    print("Scheduler shut down...")
+
+
+# Create FastAPI app and pass the lifespan function
+app = FastAPI(lifespan=lifespan)
+app.include_router(chat_worker.router)
+security = HTTPBearer()
+
+# noinspection PyTypeChecker
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def verify_token(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+) -> bool:
+    """
+    Verifies the provided bearer token against the configured API token.
+
+    This function is a dependency for FastAPI routes that require authentication.
+    It retrieves the expected token from the environment variable `API_BEARER_TOKEN` and
+    compares it to the token provided in the `Authorization` header.
+
+    Args:
+        credentials: The authentication credentials extracted from the request header.
+
+    Returns:
+        bool: True if the token is valid.
+
+    Raises:
+        HTTPException:
+            - 500: If the `API_BEARER_TOKEN` environment variable is not set.
+            - 401: If the provided token does not match the expected token.
+    """
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500, detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    return True
+
+
+@app.get("/")
+async def root():
+    """
+    Root endpoint for the API.
+
+    Returns:
+        str: A message indicating that the Chat Worker is running and tasks are scheduled.
+    """
+    return "Chat Worker is up and running! Tasks have been Scheduled!"
+
+
+# noinspection PyUnusedLocal
+@app.post("/api/v1/streambuzz", response_model=AgentResponse)
+async def sample_supabase_agent(
+    request: AgentRequest, authenticated: bool = Depends(verify_token)
+):
+    """
+    Processes a user's request using a conversational agent, interacting with Supabase.
+
+    This endpoint receives a user's query, retrieves relevant conversation history
+    from Supabase,
+    sends the query to the buzz_intern_agent, stores the user's query and the agent's
+    response
+    in Supabase, and returns a success indicator. It also handles potential
+    `UserError` exceptions
+    by generating a polite error message using the buzz_intern_agent and stores that
+    in Supabase.
+    General exceptions are caught and an error message is stored in Supabase.
+
+    Args:
+        request: The user's request, including the query, session ID, request ID,
+        and files.
+        authenticated: A boolean indicating if the user is authenticated, derived
+        from the `verify_token` dependency.
+
+    Returns:
+        AgentResponse: An object indicating the success or failure of the request.
+
+    Raises:
+        HTTPException: If an error occurs during the agent interaction or database
+        operations.
+    """
+    try:
+        # Fetch conversation history from the DB
+        messages = await fetch_conversation_history(
+            request.session_id, CONVERSATION_CONTEXT
+        )
+
+        human_messages = await fetch_human_session_history(request.session_id)
+
+        # Store user's query with files if present
+        message_data = {"request_id": request.request_id}
+        if request.files:
+            message_data["files"] = request.files
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query,
+            data=message_data,
+        )
+
+        # Get agent's response
+        agent_response = await orchestrator.get_response(
+            request=request, human_messages=human_messages, messages=messages
+        )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=agent_response,
+            data={"request_id": request.request_id},
+        )
+
+        return AgentResponse(success=True)
+    except UserError as ue:
+        user_error_string = str(ue)
+        print(f"Error>> get_response: {user_error_string}")
+        exception_response = await buzz_intern_agent.run(
+            user_prompt=f"Respond with a short polite message within 100 words to "
+                        f"convey the following error.\n{user_error_string}. You can "
+                        f"use emojis sparingly to express yourself.",
+            result_type=str,
+            deps=request.session_id,
+        )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=exception_response.data,
+            data={"request_id": request.request_id},
+        )
+
+        return AgentResponse(success=True)
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id},
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+</files>

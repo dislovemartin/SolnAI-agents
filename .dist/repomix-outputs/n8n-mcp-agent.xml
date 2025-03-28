@@ -1,0 +1,424 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+MCP_Agent_Demo.json
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="MCP_Agent_Demo.json">
+{
+  "name": "MCP Agent Demo",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "711b50da-0246-45c7-877a-cefef621de04",
+      "name": "When chat message received",
+      "webhookId": "742af357-a45c-4670-a8c1-f0319a4fb25b"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are a helpful assistant who has access to a bunch of tools to assist with user queries. Before you try to execute any tool, you need to call the tool to list available tools for the capability you want to leverage.\n\nWhen you list tools available, you'll get a list back of items that look like:\n\nname:[tool_name]\ndescription:[tool description to tell you when and how to use the tool]\nschema\n0:[param 1]\n1:[param 2]\n...\nn-1:[param n]\n\nThen when you call a tool, you need to give the tool name exactly as given to you, and the tool parameters need to be a json object like:\n\n{\n  \"param 1\": \"param 1 value\",\n  ...\n  \"param n\": \"param n value\"\n}\n\nIf there are no parameters for the tool, just pass in an empty object.\n\nFor the file system, you have access to the /files directory and that is it."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        312,
+        0
+      ],
+      "id": "209b7dea-c14a-4b89-b95b-bfd23d5899b3",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        280,
+        220
+      ],
+      "id": "0085bedd-77b0-4deb-aba8-8bb56ad82c00",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "PPVUOCGy8dTN3kdl",
+          "name": "Live Agent Studio Test"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to list all the Brave search tools that are available."
+      },
+      "type": "n8n-nodes-mcp.mcpClientTool",
+      "typeVersion": 1,
+      "position": [
+        440,
+        220
+      ],
+      "id": "688f7c08-d47a-4068-88a4-5ea993199e0e",
+      "name": "List Brave Tools",
+      "credentials": {
+        "mcpClientApi": {
+          "id": "8dZpCr8DTCqWHuKl",
+          "name": "Brave Search"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to execute a Brave tool once you have called the tool to list available Brave tools.",
+        "operation": "executeTool",
+        "toolName": "={{ $fromAI('tool_name') }}",
+        "toolParameters": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Tool_Parameters', ``, 'json') }}"
+      },
+      "type": "n8n-nodes-mcp.mcpClientTool",
+      "typeVersion": 1,
+      "position": [
+        600,
+        220
+      ],
+      "id": "9e99c89a-a1c2-4061-9d68-2a91be5cf450",
+      "name": "Execute Brave Tool",
+      "credentials": {
+        "mcpClientApi": {
+          "id": "8dZpCr8DTCqWHuKl",
+          "name": "Brave Search"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to list all the tools available to you to perform Convex actions. Only ever call this tool once!"
+      },
+      "type": "n8n-nodes-mcp.mcpClientTool",
+      "typeVersion": 1,
+      "position": [
+        780,
+        220
+      ],
+      "id": "9d766e0b-29a1-449a-a1df-585aca1d6739",
+      "name": "List Convex Tools",
+      "credentials": {
+        "mcpClientApi": {
+          "id": "6wKkBajlitsRH7dL",
+          "name": "Convex"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to execute tools related to Convex.",
+        "operation": "executeTool",
+        "toolName": "={{ $fromAI('tool_name') }}",
+        "toolParameters": "={{ $fromAI('Tool_Parameters') }}"
+      },
+      "type": "n8n-nodes-mcp.mcpClientTool",
+      "typeVersion": 1,
+      "position": [
+        940,
+        220
+      ],
+      "id": "6b21a7da-9769-4c44-9fca-80f290409ef3",
+      "name": "Execute Convex Tool",
+      "credentials": {
+        "mcpClientApi": {
+          "id": "6wKkBajlitsRH7dL",
+          "name": "Convex"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        120,
+        220
+      ],
+      "id": "702e1bad-25af-4010-a390-a3b9ea1d64e5",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "05Q6PbnSdyEcu9Ze",
+          "name": "OpenAi account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Brave Tools": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Brave Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Convex Tools": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Convex Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "8898335f-da6e-4458-b7f7-537f9b62f159",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"
+  },
+  "id": "ldC1RYzwYGzlH4qS",
+  "tags": []
+}
+</file>
+
+<file path="README.md">
+# n8n MCP Agent Demo
+
+This repository contains a workflow for n8n that demonstrates how to build an AI agent that leverages the Model Context Protocol (MCP) to access and execute external tools.
+
+This is using the [n8n community MCP node found here](https://github.com/nerding-io/n8n-nodes-mcp). You must download this before using this demo n8n workflow. Instructions can be found there.
+
+## Overview
+
+The n8n MCP Agent Demo is a workflow that showcases:
+
+1. How to create an AI agent in n8n that can dynamically discover and use tools via MCP
+2. Integration with multiple MCP clients (Brave Search and Convex)
+3. Persistent chat memory using PostgreSQL
+
+## MCP Tool Integrations
+
+The workflow includes two sets of MCP client tools:
+
+1. **Brave Search Tools**:
+   - **List Brave Tools**: Discovers available Brave Search tools
+   - **Execute Brave Tool**: Executes a specific Brave Search tool with parameters
+
+2. **Convex Tools**:
+   - **List Convex Tools**: Discovers available Convex tools
+   - **Execute Convex Tool**: Executes a specific Convex tool with parameters
+
+## How It Works
+
+1. A user message is received through the chat trigger
+2. The AI agent processes the message using the OpenAI model
+3. The agent can:
+   - List available tools from Brave Search or Convex
+   - Execute specific tools with parameters
+   - Maintain conversation context using PostgreSQL memory
+
+The workflow is designed with a specific system message that instructs the AI on how to:
+- Discover available tools before attempting to use them
+- Parse tool information including name, description, and parameter schema
+- Format tool parameters correctly when executing tools
+
+## System Message Details
+
+The agent is configured with a system message that provides detailed instructions:
+
+```
+You are a helpful assistant who has access to a bunch of tools to assist with user queries. Before you try to execute any tool, you need to call the tool to list available tools for the capability you want to leverage.
+
+When you list tools available, you'll get a list back of items that look like:
+
+name:[tool_name]
+description:[tool description to tell you when and how to use the tool]
+schema
+0:[param 1]
+1:[param 2]
+...
+n-1:[param n]
+
+Then when you call a tool, you need to give the tool name exactly as given to you, and the tool parameters need to be a json object like:
+
+{
+  "param 1": "param 1 value",
+  ...
+  "param n": "param n value"
+}
+
+If there are no parameters for the tool, just pass in an empty object.
+
+For the file system, you have access to the /files directory and that is it.
+```
+
+## Setup Requirements
+
+To use this workflow, you'll need:
+
+1. **n8n**: A running n8n instance
+2. **n8n MCP Nodes**: The MCP client nodes for n8n
+3. **PostgreSQL**: For chat memory persistence
+4. **API Credentials**:
+   - OpenAI API key
+   - Brave Search API credentials
+   - Convex API credentials
+
+## Installation
+
+1. Import the `MCP_Agent_Demo.json` file into your n8n instance
+2. Install the [n8n community MCP node](https://github.com/nerding-io/n8n-nodes-mcp) (instructions there)
+2. Configure the required credentials:
+   - OpenAI API
+   - PostgreSQL database
+   - Brave Search MCP client
+   - Convex MCP client
+
+## Usage
+
+Once the workflow is activated, you can:
+
+1. Start a conversation with the agent
+2. Ask questions that require using Brave Search or Convex tools
+3. The agent will automatically discover and use the appropriate tools to answer your questions
+
+## Extending the Workflow
+
+You can extend this workflow by:
+
+1. Adding more MCP clients to provide additional tool capabilities
+2. Customizing the system message to change agent behavior
+3. Adding pre/post processing nodes to enhance the agent's capabilities
+
+## Learn More
+
+- [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol/mcp)
+- [n8n Documentation](https://docs.n8n.io/)
+- [n8n MCP Nodes](https://github.com/nerding-io/n8n-nodes-mcp)
+</file>
+
+</files>

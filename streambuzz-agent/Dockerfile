@@ -1,4 +1,4 @@
-FROM ottomator/base-python:latest
+FROM solnai/base-python:latest
 
 # Build argument for port with default value
 ARG PORT=8001

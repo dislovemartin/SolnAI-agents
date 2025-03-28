@@ -1,0 +1,1395 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+agents/
+  activity_agent.py
+  final_planner_agent.py
+  flight_agent.py
+  hotel_agent.py
+  info_gathering_agent.py
+extras/
+  cli-info-sync.py
+  cli-sync.py
+  flight-cli.py
+  info_gathering_cli.py
+.env.example
+agent_graph.py
+langgraph.json
+README.md
+streamlit_ui.py
+utils.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="agents/activity_agent.py">
+from pydantic_ai import Agent, RunContext
+from typing import Any, List, Dict
+from dataclasses import dataclass
+import logfire
+import json
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_model
+
+logfire.configure(send_to_logfire='if-token-present')
+
+model = get_model()
+
+system_prompt = """
+You are a travel planning assistant who helps users plan their trips.
+
+You can provide personalized activity recommendations based on the user's destination, duration, budget, and preferences.
+
+Use the get_weather_forecast tool to get the weather based on the location to aid in recommending the right activities.
+
+Format your response in a clear, organized way with activities you recommend based on the weather and your reason for each.
+
+Never ask for clarification on any piece of information before recommending activities, just make
+your best guess for any parameters that you aren't sure of.
+"""
+
+activity_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    retries=2
+)
+
+@activity_agent.tool_plain
+async def get_weather_forecast(city: str, date: str) -> str:
+    """Get the weather forecast for a city on a specific date."""
+    # In a real implementation, this would call a weather API
+    weather_data = {
+        "New York": {"sunny": 0.3, "rainy": 0.4, "cloudy": 0.3},
+        "Los Angeles": {"sunny": 0.8, "rainy": 0.1, "cloudy": 0.1},
+        "Chicago": {"sunny": 0.4, "rainy": 0.3, "cloudy": 0.3},
+        "Miami": {"sunny": 0.7, "rainy": 0.2, "cloudy": 0.1},
+        "London": {"sunny": 0.2, "rainy": 0.5, "cloudy": 0.3},
+        "Paris": {"sunny": 0.4, "rainy": 0.3, "cloudy": 0.3},
+        "Tokyo": {"sunny": 0.5, "rainy": 0.3, "cloudy": 0.2},
+    }
+    
+    if city in weather_data:
+        conditions = weather_data[city]
+        # Simple simulation based on probabilities
+        highest_prob = max(conditions, key=conditions.get)
+        temp_range = {
+            "New York": "15-25°C",
+            "Los Angeles": "20-30°C",
+            "Chicago": "10-20°C",
+            "Miami": "25-35°C",
+            "London": "10-18°C",
+            "Paris": "12-22°C",
+            "Tokyo": "15-25°C",
+        }
+        return f"The weather in {city} on {date} is forecasted to be {highest_prob} with temperatures around {temp_range.get(city, '15-25°C')}."
+    else:
+        return f"Weather forecast for {city} is not available."
+</file>
+
+<file path="agents/final_planner_agent.py">
+from pydantic_ai import Agent
+import logfire
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_model
+
+logfire.configure(send_to_logfire='if-token-present')
+
+model = get_model()
+
+system_prompt = """
+You are a travel agent expert helping people plan their perfect trip.
+
+You will be given flight, hotel, and activity recommendations, and it's your job to take all
+of that information and summarize it in a neat final package to give to the user as your
+final recommendation for their trip.
+"""
+
+final_planner_agent = Agent(model, system_prompt=system_prompt)
+</file>
+
+<file path="agents/flight_agent.py">
+from pydantic_ai import Agent, RunContext
+from typing import Any, List, Dict
+from dataclasses import dataclass
+import logfire
+import json
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_model
+
+logfire.configure(send_to_logfire='if-token-present')
+
+model = get_model()
+
+@dataclass
+class FlightDeps:
+    preferred_airlines: List[str]
+
+system_prompt = """
+You are a flight specialist who helps users find the best flights for their trips.
+
+Use the search_flights tool to find flight options, and then provide personalized recommendations
+based on the user's preferences (price, time, direct vs. connecting).
+
+The user's preferences are available in the context, including preferred airlines.
+
+Always explain the reasoning behind your recommendations.
+
+Format your response in a clear, organized way with flight details and prices.
+
+Never ask for clarification on any piece of information before recommending flights, just make
+your best guess for any parameters that you aren't sure of.
+"""
+
+flight_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    deps_type=FlightDeps,
+    retries=2
+)
+
+@flight_agent.tool
+async def search_flights(ctx: RunContext[FlightDeps], origin: str, destination: str, date: str) -> str:
+    """Search for flights between two cities on a specific date, taking user preferences into account."""
+    # In a real implementation, this would call a flight search API
+    flight_options = [
+        {
+            "airline": "SkyWays",
+            "departure_time": "08:00",
+            "arrival_time": "10:30",
+            "price": 350.00,
+            "direct": True
+        },
+        {
+            "airline": "OceanAir",
+            "departure_time": "12:45",
+            "arrival_time": "15:15",
+            "price": 275.50,
+            "direct": True
+        },
+        {
+            "airline": "MountainJet",
+            "departure_time": "16:30",
+            "arrival_time": "21:45",
+            "price": 225.75,
+            "direct": False
+        }
+    ]
+    
+    # Apply user preferences if available
+    if ctx.deps.preferred_airlines:
+        preferred_airlines = ctx.deps.preferred_airlines
+        if preferred_airlines:
+            # Move preferred airlines to the top of the list
+            flight_options.sort(key=lambda x: x["airline"] not in preferred_airlines)
+            
+            # Add a note about preference matching
+            for flight in flight_options:
+                if flight["airline"] in preferred_airlines:
+                    flight["preferred"] = True                      
+    
+    return json.dumps(flight_options)
+</file>
+
+<file path="agents/hotel_agent.py">
+from pydantic_ai import Agent, RunContext
+from typing import List, Dict, Optional
+from dataclasses import dataclass
+import logfire
+import json
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_model
+
+logfire.configure(send_to_logfire='if-token-present')
+
+model = get_model()
+
+@dataclass
+class HotelDeps:
+    hotel_amenities: List[str]
+    budget_level: str
+
+system_prompt = """
+You are a hotel specialist who helps users find the best accommodations for their trips.
+
+Use the search_hotels tool to find hotel options, and then provide personalized recommendations
+based on the user's preferences (location, amenities, price range).
+
+The user's preferences are available in the context, including preferred amenities and budget level.
+
+Always explain the reasoning behind your recommendations.
+
+Format your response in a clear, organized way with hotel details, amenities, and prices.
+
+Never ask for clarification on any piece of information before recommending hotels, just make
+your best guess for any parameters that you aren't sure of.
+"""
+
+hotel_agent = Agent(
+    model,
+    system_prompt=system_prompt,
+    deps_type=HotelDeps,
+    retries=2
+)
+
+@hotel_agent.tool
+async def search_hotels(ctx: RunContext[HotelDeps], city: str, check_in: str, check_out: str, max_price: Optional[float] = None) -> str:
+    """Search for hotels in a city for specific dates within a price range, taking user preferences into account."""
+    # In a real implementation, this would call a hotel search API
+    hotel_options = [
+        {
+            "name": "City Center Hotel",
+            "location": "Downtown",
+            "price_per_night": 199.99,
+            "amenities": ["WiFi", "Pool", "Gym", "Restaurant"]
+        },
+        {
+            "name": "Riverside Inn",
+            "location": "Riverside District",
+            "price_per_night": 149.50,
+            "amenities": ["WiFi", "Free Breakfast", "Parking"]
+        },
+        {
+            "name": "Luxury Palace",
+            "location": "Historic District",
+            "price_per_night": 349.99,
+            "amenities": ["WiFi", "Pool", "Spa", "Fine Dining", "Concierge"]
+        }
+    ]
+    
+    # Filter by max price if provided
+    if max_price is not None:
+        filtered_hotels = [hotel for hotel in hotel_options if hotel["price_per_night"] <= max_price]
+    else:
+        filtered_hotels = hotel_options
+    
+    # Apply user preferences if available
+    preferred_amenities = ctx.deps.hotel_amenities
+    budget_level = ctx.deps.budget_level
+    
+    # Sort hotels by preference match
+    if preferred_amenities:
+        # Calculate a score based on how many preferred amenities each hotel has
+        for hotel in filtered_hotels:
+            matching_amenities = [a for a in hotel["amenities"] if a in preferred_amenities]
+            hotel["matching_amenities"] = matching_amenities
+            hotel["preference_score"] = len(matching_amenities)
+        
+        # Sort by preference score (higher scores first)
+        filtered_hotels.sort(key=lambda x: x["preference_score"], reverse=True)
+    
+    # Apply budget level preferences if available
+    if budget_level:
+        if budget_level == "budget":
+            filtered_hotels.sort(key=lambda x: x["price_per_night"])
+        elif budget_level == "luxury":
+            filtered_hotels.sort(key=lambda x: x["price_per_night"], reverse=True)
+        # mid-range is already handled by the max_price filter
+        
+    return json.dumps(filtered_hotels)
+</file>
+
+<file path="agents/info_gathering_agent.py">
+from pydantic_ai import Agent, RunContext
+from pydantic import BaseModel, Field
+from typing import Any, List, Dict
+from dataclasses import dataclass
+import logfire
+import json
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_model
+
+logfire.configure(send_to_logfire='if-token-present')
+
+model = get_model()
+
+class TravelDetails(BaseModel):
+    """Details for the current trip."""
+    response: str = Field(description='The response to give back to the user if they did not give all the necessary details for their trip')
+    destination: str
+    origin: str
+    max_hotel_price: int
+    date_leaving: str = Field(description='Date in format MM-DD')
+    date_returning: str = Field(description='Date in format MM-DD')
+    all_details_given: bool = Field(description='True if the user has given all the necessary details, otherwise false')
+
+system_prompt = """
+You are a travel planning assistant who helps users plan their trips.
+
+Your goal is to gather all the necessary details from the user for their trip, including:
+- Where they are going
+- Where they are flying from
+- Date they are leaving (month and day)
+- Date they are returning
+- Max price for a hotel per night
+
+Output all the information for the trip you have in the required format, and also
+ask the user for any missing information if necessary. Tell the user what information they need to provide still.
+"""
+
+info_gathering_agent = Agent(
+    model,
+    result_type=TravelDetails,
+    system_prompt=system_prompt,
+    retries=2
+)
+</file>
+
+<file path="extras/cli-info-sync.py">
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart, PartDeltaEvent, PartStartEvent, TextPartDelta
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.live import Live
+from rich.text import Text
+from pydantic_ai import Agent
+from dotenv import load_dotenv
+from typing import List
+import asyncio
+import logfire
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agents.info_gathering_agent import info_gathering_agent
+
+# Load environment variables
+load_dotenv()
+
+# Configure logfire to suppress warnings
+logfire.configure(send_to_logfire='never')
+
+class CLI:
+    def __init__(self):
+        self.messages: List[ModelMessage] = []
+        self.console = Console()
+
+    async def chat(self):
+        print("Flight Agent CLI (type 'quit' to exit)")
+        print("Enter your message:")
+        
+        while True:
+            user_input = input("> ").strip()
+            if user_input.lower() == 'quit':
+                break
+
+            # Run the agent with streaming
+            with Live('', console=self.console, vertical_overflow='visible') as live:
+                output_messages = []
+                result = await info_gathering_agent.run(user_input, message_history=self.messages)
+                live.update(Markdown(result.data.response))
+
+            # Store the user message, tool calls and results, and the AI response
+            self.messages += result.all_messages()
+
+async def main():
+    cli = CLI()
+    await cli.chat()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="extras/cli-sync.py">
+from dotenv import load_dotenv
+from typing import List
+import asyncio
+import logfire
+import sys
+import os
+
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agents.flight_agent import flight_agent, FlightDeps
+
+# Load environment variables
+load_dotenv()
+
+# Configure logfire to suppress warnings
+logfire.configure(send_to_logfire='never')
+
+class CLI:
+    def __init__(self):
+        self.messages: List[ModelMessage] = []
+        self.deps = FlightDeps(
+            preferred_airlines=["OceanAir"]
+        )
+
+    async def chat(self):
+        print("Flight Agent CLI (type 'quit' to exit)")
+        print("Enter your message:")
+        
+        while True:
+            user_input = input("> ").strip()
+            if user_input.lower() == 'quit':
+                break
+
+            # Run the agent with streaming
+            result = await flight_agent.run(
+                user_input,
+                deps=self.deps,
+                message_history=self.messages
+            )
+
+            # Store the user message
+            self.messages.append(
+                ModelRequest(parts=[UserPromptPart(content=user_input)])
+            )
+
+            # Store itermediatry messages like tool calls and responses
+            filtered_messages = [msg for msg in result.new_messages() 
+                            if not (hasattr(msg, 'parts') and 
+                                    any(part.part_kind == 'user-prompt' or part.part_kind == 'text' for part in msg.parts))]
+            self.messages.extend(filtered_messages)
+
+            # Optional if you want to print out tool calls and responses
+            # print(filtered_messages + "\n\n")
+
+            print(result.data)
+
+            # Add the final response from the agent
+            self.messages.append(
+                ModelResponse(parts=[TextPart(content=result.data)])
+            )
+
+async def main():
+    cli = CLI()
+    await cli.chat()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="extras/flight-cli.py">
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart, PartDeltaEvent, PartStartEvent, TextPartDelta
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.live import Live
+from rich.text import Text
+from pydantic_ai import Agent
+from dotenv import load_dotenv
+from typing import List
+import asyncio
+import logfire
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agents.flight_agent import flight_agent, FlightDeps
+
+# Load environment variables
+load_dotenv()
+
+# Configure logfire to suppress warnings
+logfire.configure(send_to_logfire='never')
+
+class CLI:
+    def __init__(self):
+        self.messages: List[ModelMessage] = []
+        self.deps = FlightDeps(
+            preferred_airlines=["OceanAir"]
+        )
+        self.console = Console()
+
+    async def chat(self):
+        print("Flight Agent CLI (type 'quit' to exit)")
+        print("Enter your message:")
+        
+        while True:
+            user_input = input("> ").strip()
+            if user_input.lower() == 'quit':
+                break
+
+            # Run the agent with streaming
+            with Live('', console=self.console, vertical_overflow='visible') as live:
+                output_messages = []
+                async with flight_agent.iter(user_input, deps=self.deps, message_history=self.messages) as run:
+                    async for node in run:
+                        ai_response = ""
+                        if Agent.is_model_request_node(node):
+                            # A model request node => We can stream tokens from the model's request
+                            async with node.stream(run.ctx) as request_stream:
+                                async for event in request_stream:
+                                    if isinstance(event, PartStartEvent) and event.part.part_kind == 'text':
+                                            ai_response = event.part.content
+                                            live.update(Markdown(ai_response))
+                                    elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+                                            ai_response += event.delta.content_delta
+                                            live.update(Markdown(ai_response))                       
+
+            # Store the user message, tool calls and results, and the AI response
+            self.messages += run.result.all_messages()
+
+async def main():
+    cli = CLI()
+    await cli.chat()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="extras/info_gathering_cli.py">
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from rich.console import Console, ConsoleOptions, RenderResult
+from pydantic import ValidationError
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.live import Live
+from rich.text import Text
+from pydantic_ai import Agent
+from dotenv import load_dotenv
+from typing import List
+import asyncio
+import logfire
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agents.info_gathering_agent import info_gathering_agent
+
+# Load environment variables
+load_dotenv()
+
+# Configure logfire to suppress warnings
+logfire.configure(send_to_logfire='never')
+
+class CLI:
+    def __init__(self):
+        self.messages: List[ModelMessage] = []
+        self.console = Console()
+
+    async def chat(self):
+        print("Flight Agent CLI (type 'quit' to exit)")
+        print("Enter your message:")
+        
+        while True:
+            user_input = input("> ").strip()
+            if user_input.lower() == 'quit':
+                break
+
+            # Run the agent with streaming
+            with Live('', console=self.console, vertical_overflow='visible') as live:
+                async with info_gathering_agent.run_stream(user_input, message_history=self.messages) as result:
+                    async for message, last in result.stream_structured(debounce_by=0.01):  
+                        try:
+                            if last and not travel_details.response:
+                                raise Exception("Incorrect travel details returned by the agent.")
+                            travel_details = await result.validate_structured_result(  
+                                message,
+                                allow_partial=not last,
+                            )
+                        except ValidationError as e:
+                            continue
+
+                        if travel_details.response:
+                            live.update(Markdown(travel_details.response))
+
+            print(travel_details.all_details_given)           
+
+            # Store the user message
+            self.messages.append(
+                ModelRequest(parts=[UserPromptPart(content=user_input)])
+            )
+
+            # Add the final response from the agent
+            self.messages.append(
+                ModelResponse(parts=[TextPart(content=travel_details.response)])
+            )
+
+async def main():
+    cli = CLI()
+    await cli.chat()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path=".env.example">
+# Options supported are:
+# 1. OpenAI
+# 2. OpenRouter
+# 3. Ollama
+PROVIDER=
+
+# Base URL for the OpenAI instance (default is https://api.openai.com/v1)
+# OpenAI: https://api.openai.com/v1
+# Ollama (example): http://localhost:11434/v1
+# OpenRouter: https://openrouter.ai/api/v1
+BASE_URL=
+
+# OpenAI: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# Open Router: Get your API Key here after registering: https://openrouter.ai/keys
+# Ollama: No need to set this unless you specifically configured an API key
+LLM_API_KEY=
+
+# The LLM you want to use for the agents. Make sure this LLM supports tools (especially important if using Ollama)!
+# OpenAI example: gpt-4o-mini
+# OpenRouter example: anthropic/claude-3.7-sonnet
+# Ollama example: qwen2.5:14b-instruct-8k
+MODEL_CHOICE=
+</file>
+
+<file path="agent_graph.py">
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.config import get_stream_writer
+from typing import Annotated, Dict, List, Any
+from typing_extensions import TypedDict
+from langgraph.types import interrupt
+from pydantic import ValidationError
+from dataclasses import dataclass
+import logfire
+import asyncio
+import sys
+import os
+
+# Import the message classes from Pydantic AI
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter
+)
+
+# Import the agents
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from agents.info_gathering_agent import info_gathering_agent, TravelDetails
+from agents.flight_agent import flight_agent, FlightDeps
+from agents.hotel_agent import hotel_agent, HotelDeps
+from agents.activity_agent import activity_agent
+from agents.final_planner_agent import final_planner_agent
+
+logfire.configure(send_to_logfire='if-token-present')
+
+# Define the state for our graph
+class TravelState(TypedDict):
+    # Chat messages and travel details
+    user_input: str
+    messages: Annotated[List[bytes], lambda x, y: x + y]
+    travel_details: Dict[str, Any]
+
+    # User preferences
+    preferred_airlines: List[str]
+    hotel_amenities: List[str]
+    budget_level: str
+    
+    # Results from each agent
+    flight_results: str
+    hotel_results: str
+    activity_results: str
+    
+    # Final summary
+    final_plan: str
+
+# Node functions for the graph
+
+# Info gathering node
+async def gather_info(state: TravelState, writer) -> Dict[str, Any]:
+    """Gather necessary travel information from the user."""
+    user_input = state["user_input"]
+
+    # Get the message history into the format for Pydantic AI
+    message_history: list[ModelMessage] = []
+    for message_row in state['messages']:
+        message_history.extend(ModelMessagesTypeAdapter.validate_json(message_row))    
+    
+    # Call the info gathering agent
+    # result = await info_gathering_agent.run(user_input)
+    async with info_gathering_agent.run_stream(user_input, message_history=message_history) as result:
+        curr_response = ""
+        async for message, last in result.stream_structured(debounce_by=0.01):  
+            try:
+                if last and not travel_details.response:
+                    raise Exception("Incorrect travel details returned by the agent.")
+                travel_details = await result.validate_structured_result(  
+                    message,
+                    allow_partial=not last
+                )
+            except ValidationError as e:
+                continue
+
+            if travel_details.response:
+                writer(travel_details.response[len(curr_response):])
+                curr_response = travel_details.response  
+
+    # Return the response asking for more details if necessary
+    data = await result.get_data()
+    return {
+        "travel_details": data.model_dump(),
+        "messages": [result.new_messages_json()]
+    }
+
+# Flight recommendation node
+async def get_flight_recommendations(state: TravelState, writer) -> Dict[str, Any]:
+    """Get flight recommendations based on travel details."""
+    writer("\n#### Getting flight recommendations...\n")
+    travel_details = state["travel_details"]
+    preferred_airlines = state['preferred_airlines']
+    
+    # Create flight dependencies (in a real app, this would come from user preferences)
+    flight_dependencies = FlightDeps(preferred_airlines=preferred_airlines)
+    
+    # Prepare the prompt for the flight agent
+    prompt = f"I need flight recommendations from {travel_details['origin']} to {travel_details['destination']} on {travel_details['date_leaving']}. Return flight on {travel_details['date_returning']}."
+    
+    # Call the flight agent
+    result = await flight_agent.run(prompt, deps=flight_dependencies)
+    
+    # Return the flight recommendations
+    return {"flight_results": result.data}
+
+# Hotel recommendation node
+async def get_hotel_recommendations(state: TravelState, writer) -> Dict[str, Any]:
+    """Get hotel recommendations based on travel details."""
+    writer("\n#### Getting hotel recommendations...\n")
+    travel_details = state["travel_details"]
+    hotel_amenities = state['hotel_amenities']
+    budget_level = state['budget_level']
+    
+    # Create hotel dependencies (in a real app, this would come from user preferences)
+    hotel_dependencies = HotelDeps(
+        hotel_amenities=hotel_amenities,
+        budget_level=budget_level
+    )
+    
+    # Prepare the prompt for the hotel agent
+    prompt = f"I need hotel recommendations in {travel_details['destination']} from {travel_details['date_leaving']} to {travel_details['date_returning']} with a maximum price of ${travel_details['max_hotel_price']} per night."
+    
+    # Call the hotel agent
+    result = await hotel_agent.run(prompt, deps=hotel_dependencies)
+    
+    # Return the hotel recommendations
+    return {"hotel_results": result.data}
+
+# Activity recommendation node
+async def get_activity_recommendations(state: TravelState, writer) -> Dict[str, Any]:
+    """Get activity recommendations based on travel details."""
+    writer("\n#### Getting activity recommendations...\n")
+    travel_details = state["travel_details"]
+    
+    # Prepare the prompt for the activity agent
+    prompt = f"I need activity recommendations for {travel_details['destination']} from {travel_details['date_leaving']} to {travel_details['date_returning']}."
+    
+    # Call the activity agent
+    result = await activity_agent.run(prompt)
+    
+    # Return the activity recommendations
+    return {"activity_results": result.data}
+
+# Final planning node
+async def create_final_plan(state: TravelState, writer) -> Dict[str, Any]:
+    """Create a final travel plan based on all recommendations."""
+    travel_details = state["travel_details"]
+    flight_results = state["flight_results"]
+    hotel_results = state["hotel_results"]
+    activity_results = state["activity_results"]
+    
+    # Prepare the prompt for the final planner agent
+    prompt = f"""
+    I'm planning a trip to {travel_details['destination']} from {travel_details['origin']} on {travel_details['date_leaving']} and returning on {travel_details['date_returning']}.
+    
+    Here are the flight recommendations:
+    {flight_results}
+    
+    Here are the hotel recommendations:
+    {hotel_results}
+    
+    Here are the activity recommendations:
+    {activity_results}
+    
+    Please create a comprehensive travel plan based on these recommendations.
+    """
+    
+    # Call the final planner agent
+    async with final_planner_agent.run_stream(prompt) as result:
+        # Stream partial text as it arrives
+        async for chunk in result.stream_text(delta=True):
+            writer(chunk)
+    
+    # Return the final plan
+    data = await result.get_data()
+    return {"final_plan": data}
+
+# Conditional edge function to determine next steps after info gathering
+def route_after_info_gathering(state: TravelState):
+    """Determine what to do after gathering information."""
+    travel_details = state["travel_details"]
+    
+    # If all details are not given, we need more information
+    if not travel_details.get("all_details_given", False):
+        return "get_next_user_message"
+    
+    # If all details are given, we can proceed to parallel recommendations
+    # Return a list of Send objects to fan out to multiple nodes
+    return ["get_flight_recommendations", "get_hotel_recommendations", "get_activity_recommendations"]
+
+# Interrupt the graph to get the user's next message
+def get_next_user_message(state: TravelState):
+    value = interrupt({})
+
+    # Set the user's latest message for the LLM to continue the conversation
+    return {
+        "user_input": value
+    }    
+
+# Build the graph
+def build_travel_agent_graph():
+    """Build and return the travel agent graph."""
+    # Create the graph with our state
+    graph = StateGraph(TravelState)
+    
+    # Add nodes
+    graph.add_node("gather_info", gather_info)
+    graph.add_node("get_next_user_message", get_next_user_message)
+    graph.add_node("get_flight_recommendations", get_flight_recommendations)
+    graph.add_node("get_hotel_recommendations", get_hotel_recommendations)
+    graph.add_node("get_activity_recommendations", get_activity_recommendations)
+    graph.add_node("create_final_plan", create_final_plan)
+    
+    # Add edges
+    graph.add_edge(START, "gather_info")
+    
+    # Conditional edge after info gathering
+    graph.add_conditional_edges(
+        "gather_info",
+        route_after_info_gathering,
+        ["get_next_user_message", "get_flight_recommendations", "get_hotel_recommendations", "get_activity_recommendations"]
+    )
+
+    # After getting a user message (required if not enough details given), route back to the info gathering agent
+    graph.add_edge("get_next_user_message", "gather_info")
+    
+    # Connect all recommendation nodes to the final planning node
+    graph.add_edge("get_flight_recommendations", "create_final_plan")
+    graph.add_edge("get_hotel_recommendations", "create_final_plan")
+    graph.add_edge("get_activity_recommendations", "create_final_plan")
+    
+    # Connect final planning to END
+    graph.add_edge("create_final_plan", END)
+    
+    # Compile the graph
+    memory = MemorySaver()
+    return graph.compile(checkpointer=memory)
+
+# Create the travel agent graph
+travel_agent_graph = build_travel_agent_graph()
+
+# Function to run the travel agent
+async def run_travel_agent(user_input: str):
+    """Run the travel agent with the given user input."""
+    # Initialize the state with user input
+    initial_state = {
+        "user_input": user_input,
+        "travel_details": {},
+        "flight_results": [],
+        "hotel_results": [],
+        "activity_results": [],
+        "final_plan": ""
+    }
+    
+    # Run the graph
+    result = await travel_agent_graph.ainvoke(initial_state)
+    
+    # Return the final plan
+    return result["final_plan"]
+
+async def main():
+    # Example user input
+    user_input = "I want to plan a trip from New York to Paris from 06-15 to 06-22. My max budget for a hotel is $200 per night."
+    
+    # Run the travel agent
+    final_plan = await run_travel_agent(user_input)
+    
+    # Print the final plan
+    print("Final Travel Plan:")
+    print(final_plan)
+
+# Example usage
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="langgraph.json">
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent_graph.py:travel_agent_graph"
+  },
+  "env": ".env"
+}
+</file>
+
+<file path="README.md">
+# Travel Planning Agent System
+
+A demonstration of the parallel agent architecture using Pydantic AI and LangGraph. This project implements a multi-agent travel planning system that helps users plan their perfect trip through an interactive Streamlit UI.
+
+![Travel Agent Graph](extras/TravelAgentGraph.png)
+
+## Overview
+
+This project implements a sophisticated travel planning system that uses multiple specialized AI agents working in parallel to create comprehensive travel plans. The system collects user preferences and travel details through a conversational interface, then simultaneously processes flight, hotel, and activity recommendations before combining them into a final travel plan.
+
+All tool calls for the agents are mocked, so this isn't using real data! This is simply built as an example, focusing on the agent architecture instead of the tooling.
+
+## Features
+
+- **Interactive Streamlit UI** with real-time streaming responses
+- **Multi-agent architecture** with specialized agents for different aspects of travel planning
+- **Parallel processing** of recommendations for improved efficiency
+- **User preference management** for airlines, hotel amenities, and budget levels
+- **Conversational interface** for gathering travel details
+- **Comprehensive travel plans** with flights, accommodations, and activities
+
+## Architecture
+
+The system consists of five specialized agents:
+
+1. **Info Gathering Agent**: Collects necessary travel details (destination, origin, dates, budget)
+2. **Flight Agent**: Recommends flights based on travel details and user preferences
+3. **Hotel Agent**: Suggests accommodations based on destination, dates, budget, and amenity preferences
+4. **Activity Agent**: Recommends activities based on destination, dates, and weather forecasts
+5. **Final Planner Agent**: Aggregates all recommendations into a comprehensive travel plan
+
+These agents are orchestrated through a LangGraph workflow that enables parallel execution and dynamic routing based on the completeness of gathered information.
+
+## Technical Stack
+
+- **Pydantic AI**: For structured agent definitions and type validation
+- **LangGraph**: For orchestrating the agent workflow and parallel execution
+- **Streamlit**: For building the interactive user interface
+
+## Setup Instructions
+
+### Prerequisites
+
+- Python 3.11 or higher
+- OpenAI or OpenRouter API key (can use Ollama too)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/travel-planning-agent.git
+   cd travel-planning-agent
+   ```
+
+2. Set up a virtual environment:
+
+   **Windows**:
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+
+   **macOS/Linux**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Create a `.env` file in the root directory and follow the instructions given in `.env.example`:
+   ```
+   PROVIDER=
+   BASE_URL=
+   LLM_API_KEY=
+   MODEL_CHOICE=
+   ```
+
+### Running the Application
+
+1. Start the Streamlit UI:
+   ```bash
+   streamlit run streamlit_ui.py
+   ```
+
+2. Open your browser and navigate to the URL displayed in the terminal (typically http://localhost:8501)
+
+## Usage
+
+1. **Set Your Preferences**: Use the sidebar to set your preferred airlines, hotel amenities, and budget level.
+
+2. **Start a Conversation**: Type your travel request in the chat input. For example:
+   ```
+   I want to go to Tokyo from Minneapolis. Jun 1st, returning on 6th. Max price for hotel is $300 per night.
+   ```
+
+3. **Interact with the Agent**: The system will ask follow-up questions if any details are missing.
+
+4. **Review Your Plan**: Once all details are collected, the system will generate a comprehensive travel plan with flight, hotel, and activity recommendations.
+
+Note that with this demonstration, once the final plan is given to you, the conversation is over. This can of course be extended to allow for editing the trip, asking more questions, etc.
+
+## Project Structure
+
+```
+travel-planning-agent/
+├── agents/                      # Individual agent definitions
+│   ├── activity_agent.py        # Agent for recommending activities
+│   ├── final_planner_agent.py   # Agent for creating the final travel plan
+│   ├── flight_agent.py          # Agent for flight recommendations
+│   ├── hotel_agent.py           # Agent for hotel recommendations
+│   └── info_gathering_agent.py  # Agent for collecting travel details
+├── agent_graph.py               # LangGraph workflow definition
+├── streamlit_ui.py              # Streamlit user interface
+├── utils.py                     # Utility functions
+├── requirements.txt             # Project dependencies
+└── README.md                    # Project documentation
+```
+
+## How It Works
+
+1. The system starts by gathering all necessary information from the user through the Info Gathering Agent.
+2. Once all required details are collected, the system simultaneously calls the Flight, Hotel, and Activity agents to get recommendations.
+3. Each specialized agent uses its tools to search for and recommend options based on the user's preferences.
+4. After all recommendations are collected, the Final Planner Agent creates a comprehensive travel plan.
+5. The entire process is streamed in real-time to the user through the Streamlit UI.
+
+## Inspired by Anthropic's Agent Architecture
+
+This project is a demonstration of the parallelization workflow showcased in [Anthropic's Agent Architecture blog](https://www.anthropic.com/engineering/building-effective-agents). The implementation follows a similar pattern where multiple specialized agents work in parallel to solve different aspects of a complex task.
+
+![Anthropic Parallelization Workflow](extras/AnthropicParallelizationWorkflow.png)
+
+The key architectural pattern demonstrated here is the ability to:
+1. Gather initial information
+2. Fan out to multiple specialized agents working in parallel
+3. Aggregate results into a final, comprehensive response
+
+This approach significantly improves efficiency compared to sequential processing, especially for complex tasks with independent subtasks.
+
+## Customization
+
+You can customize the system by:
+
+- Modifying agent prompts in the respective agent files
+- Adding new specialized agents for additional travel aspects
+- Enhancing the tools with real API integrations for flights, hotels, and activities
+- Extending the user preference system with additional options
+
+## License
+
+This project is licensed under the MIT License.
+
+## Acknowledgments
+
+- Built with [Pydantic AI](https://github.com/pydantic/pydantic-ai)
+- Powered by [LangGraph](https://github.com/langchain-ai/langgraph)
+- UI created with [Streamlit](https://streamlit.io/)
+</file>
+
+<file path="streamlit_ui.py">
+from langgraph.types import Command
+from typing import List, Dict, Any
+from pydantic import BaseModel
+from datetime import datetime
+import streamlit as st
+import asyncio
+import uuid
+import json
+import os
+
+from agent_graph import travel_agent_graph
+
+
+# Page configuration
+st.set_page_config(
+    page_title="Travel Planner Assistant",
+    page_icon="✈️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better styling - minimal now that we're using Streamlit's chat components
+st.markdown("""
+<style>
+    .stChatMessage {
+        margin-bottom: 1rem;
+    }
+    .stChatMessage .content {
+        padding: 0.5rem;
+    }
+    .stChatMessage .timestamp {
+        font-size: 0.8rem;
+        color: #888;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+class UserContext(BaseModel):
+    user_id: str
+    preferred_airlines: List[str]
+    hotel_amenities: List[str]
+    budget_level: str
+
+@st.cache_resource
+def get_thread_id():
+    return str(uuid.uuid4())
+
+thread_id = get_thread_id()
+
+# Initialize session state for chat history and user context
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
+
+if "user_context" not in st.session_state:
+    st.session_state.user_context = UserContext(
+        user_id=str(uuid.uuid4()),
+        preferred_airlines=[],
+        hotel_amenities=[],
+        budget_level="mid-range"
+    )
+
+if "processing_message" not in st.session_state:
+    st.session_state.processing_message = None
+
+# Function to handle user input
+def handle_user_message(user_input: str):
+    # Add user message to chat history immediately
+    timestamp = datetime.now().strftime("%I:%M %p")
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": user_input,
+        "timestamp": timestamp
+    })
+    
+    # Set the message for processing in the next rerun
+    st.session_state.processing_message = user_input
+
+# Function to invoke the agent graph to interact with the Travel Planning Agent
+async def invoke_agent_graph(user_input: str):
+    """
+    Run the agent with streaming text for the user_input prompt,
+    while maintaining the entire conversation in `st.session_state.messages`.
+    """
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    # First message from user
+    if len(st.session_state.chat_history) == 1:
+        user_context = st.session_state.user_context
+        initial_state = {
+            "user_input": user_input,
+            "preferred_airlines": user_context.preferred_airlines,
+            "hotel_amenities": user_context.hotel_amenities,
+            "budget_level": user_context.budget_level
+        }
+        async for msg in travel_agent_graph.astream(
+                initial_state, config, stream_mode="custom"
+            ):
+                yield msg
+    # Continue the conversation
+    else:
+        async for msg in travel_agent_graph.astream(
+            Command(resume=user_input), config, stream_mode="custom"
+        ):
+            yield msg
+
+async def main():
+    # Sidebar for user preferences
+    with st.sidebar:
+        st.title("Travel Preferences")
+        
+        st.subheader("About You")
+        traveler_name = st.text_input("Your Name", value="Traveler")
+        
+        st.subheader("Travel Preferences")
+        preferred_airlines = st.multiselect(
+            "Preferred Airlines",
+            ["SkyWays", "OceanAir", "MountainJet", "Delta", "United", "American", "Southwest"],
+            default=st.session_state.user_context.preferred_airlines
+        )
+        
+        preferred_amenities = st.multiselect(
+            "Must-have Hotel Amenities",
+            ["WiFi", "Pool", "Gym", "Free Breakfast", "Restaurant", "Spa", "Parking"],
+            default=st.session_state.user_context.hotel_amenities
+        )
+        
+        budget_level = st.select_slider(
+            "Budget Level",
+            options=["budget", "mid-range", "luxury"],
+            value=st.session_state.user_context.budget_level or "mid-range"
+        )
+        
+        if st.button("Save Preferences"):
+            st.session_state.user_context.preferred_airlines = preferred_airlines
+            st.session_state.user_context.hotel_amenities = preferred_amenities
+            st.session_state.user_context.budget_level = budget_level
+            st.success("Preferences saved!")
+        
+        st.divider()
+        
+        if st.button("Start New Conversation"):
+            st.session_state.chat_history = []
+            st.session_state.thread_id = str(uuid.uuid4())
+            st.success("New conversation started!")
+
+    # Main chat interface
+    st.title("✈️ Travel Planner Assistant")
+    st.caption("Give me the details for your trip and let me plan it for you!")
+
+    # Display chat messages
+    for message in st.session_state.chat_history:
+        if message["role"] == "user":
+            with st.chat_message("user", avatar=f"https://api.dicebear.com/7.x/avataaars/svg?seed={st.session_state.user_context.user_id}"):
+                st.markdown(message["content"])
+                st.caption(message["timestamp"])
+        else:
+            with st.chat_message("assistant", avatar="https://api.dicebear.com/7.x/bottts/svg?seed=travel-agent"):
+                st.markdown(message["content"])
+                st.caption(message["timestamp"])
+
+    # User input
+    # Example: I want to go to Tokyo from Minneapolis. Jun 1st, returning on 6th. Max price for hotel is $300 per night
+    user_input = st.chat_input("Let's plan a trip...")
+    if user_input:
+        handle_user_message(user_input)
+        st.rerun()
+
+    # Process message if needed
+    if st.session_state.processing_message:
+        user_input = st.session_state.processing_message
+        st.session_state.processing_message = None
+        
+        # Process the message asynchronously
+        with st.spinner("Thinking..."):
+            try:
+                # Prepare input for the agent using chat history
+                if len(st.session_state.chat_history) > 1:
+                    # Convert chat history to input list format for the agent
+                    input_list = []
+                    for msg in st.session_state.chat_history:
+                        input_list.append({"role": msg["role"], "content": msg["content"]})
+                else:
+                    # First message
+                    input_list = user_input
+
+                # Display assistant response in chat message container
+                response_content = ""
+                
+                # Create a chat message container using Streamlit's built-in component
+                with st.chat_message("assistant", avatar="https://api.dicebear.com/7.x/bottts/svg?seed=travel-agent"):
+                    message_placeholder = st.empty()
+                    
+                    # Run the async generator to fetch responses
+                    async for chunk in invoke_agent_graph(user_input):
+                        response_content += chunk
+                        # Update only the text content
+                        message_placeholder.markdown(response_content)
+                
+                # Add assistant response to chat history
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": response_content,
+                    "timestamp": datetime.now().strftime("%I:%M %p")
+                })
+                
+            except Exception as e:
+                raise Exception(e)
+                error_message = f"Sorry, I encountered an error: {str(e)}"
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": error_message,
+                    "timestamp": datetime.now().strftime("%I:%M %p")
+                })
+            
+            # Force a rerun to display the AI response
+            # st.rerun()
+
+    # Footer
+    st.divider()
+    st.caption("Powered by Pydantic AI and LangGraph | Built with Streamlit")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="utils.py">
+from pydantic_ai.models.openai import OpenAIModel
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+
+    return OpenAIModel(
+        llm,
+        base_url=base_url,
+        api_key=api_key
+    )
+</file>
+
+</files>

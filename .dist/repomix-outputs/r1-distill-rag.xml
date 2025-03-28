@@ -1,0 +1,439 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+ollama_models/
+  Deepseek-r1-7b-8k
+  Qwen-14b-Instruct-8k
+  Qwen-7b-Instruct-8k
+.env.example
+ingest_pdfs.py
+r1_smolagent_rag.py
+README.md
+streamlit.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="ollama_models/Deepseek-r1-7b-8k">
+FROM deepseek-r1:7b
+PARAMETER num_ctx 8096
+</file>
+
+<file path="ollama_models/Qwen-14b-Instruct-8k">
+FROM qwen2.5:14b-instruct-q4_K_M
+PARAMETER num_ctx 8096
+</file>
+
+<file path="ollama_models/Qwen-7b-Instruct-8k">
+FROM qwen2.5:7b-instruct-q4_K_M
+PARAMETER num_ctx 8096
+</file>
+
+<file path=".env.example">
+# Whether to use the HuggingFace API or Ollama
+# Set this to yes or no
+USE_HUGGINGFACE=
+
+# This token is optional but you'll have more restrictive rate limits and model options without it
+# Get your HuggingFace token from https://huggingface.co/settings/tokens
+HUGGINGFACE_API_TOKEN=
+
+# The model ID to use from HuggingFace for the reasoning LLM. 
+# Get this by visiting the model page on HuggingFace and copying the ID in the URL or in the top left of the page
+# Example: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+REASONING_MODEL_ID=
+
+# The model ID to use from HuggingFace for the tool calling LLM
+# Example: meta-llama/Llama-3.3-70B-Instruct
+TOOL_MODEL_ID=
+</file>
+
+<file path="ingest_pdfs.py">
+from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+from dotenv import load_dotenv
+import os
+import shutil
+
+load_dotenv()
+
+def load_and_process_pdfs(data_dir: str):
+    """Load PDFs from directory and split into chunks."""
+    loader = DirectoryLoader(
+        data_dir,
+        glob="**/*.pdf",
+        loader_cls=PyPDFLoader
+    )
+    documents = loader.load()
+    
+    # Split documents into chunks
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len,
+    )
+    chunks = text_splitter.split_documents(documents)
+    return chunks
+
+def create_vector_store(chunks, persist_directory: str):
+    """Create and persist Chroma vector store."""
+    # Clear existing vector store if it exists
+    if os.path.exists(persist_directory):
+        print(f"Clearing existing vector store at {persist_directory}")
+        shutil.rmtree(persist_directory)
+    
+    # Initialize HuggingFace embeddings
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-mpnet-base-v2",
+        model_kwargs={'device': 'cpu'}
+    )
+    
+    # Create and persist Chroma vector store
+    print("Creating new vector store...")
+    vectordb = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        persist_directory=persist_directory
+    )
+    return vectordb
+
+def main():
+    # Define directories
+    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    db_dir = os.path.join(os.path.dirname(__file__), "chroma_db")
+    
+    # Process PDFs
+    print("Loading and processing PDFs...")
+    chunks = load_and_process_pdfs(data_dir)
+    print(f"Created {len(chunks)} chunks from PDFs")
+    
+    # Create vector store
+    print("Creating vector store...")
+    vectordb = create_vector_store(chunks, db_dir)
+    print(f"Vector store created and persisted at {db_dir}")
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="r1_smolagent_rag.py">
+from smolagents import OpenAIServerModel, CodeAgent, ToolCallingAgent, HfApiModel, tool, GradioUI
+from dotenv import load_dotenv
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+import os
+
+load_dotenv()
+
+reasoning_model_id = os.getenv("REASONING_MODEL_ID")
+tool_model_id = os.getenv("TOOL_MODEL_ID")
+huggingface_api_token = os.getenv("HUGGINGFACE_API_TOKEN")
+
+def get_model(model_id):
+    using_huggingface = os.getenv("USE_HUGGINGFACE", "yes").lower() == "yes"
+    if using_huggingface:
+        return HfApiModel(model_id=model_id, token=huggingface_api_token)
+    else:
+        return OpenAIServerModel(
+            model_id=model_id,
+            api_base="http://localhost:11434/v1",
+            api_key="ollama"
+        )
+
+# Create the reasoner for better RAG
+reasoning_model = get_model(reasoning_model_id)
+reasoner = CodeAgent(tools=[], model=reasoning_model, add_base_tools=False, max_steps=2)
+
+# Initialize vector store and embeddings
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-mpnet-base-v2",
+    model_kwargs={'device': 'cpu'}
+)
+db_dir = os.path.join(os.path.dirname(__file__), "chroma_db")
+vectordb = Chroma(persist_directory=db_dir, embedding_function=embeddings)
+
+@tool
+def rag_with_reasoner(user_query: str) -> str:
+    """
+    This is a RAG tool that takes in a user query and searches for relevant content from the vector database.
+    The result of the search is given to a reasoning LLM to generate a response, so what you'll get back
+    from this tool is a short answer to the user's question based on RAG context.
+
+    Args:
+        user_query: The user's question to query the vector database with.
+    """
+    # Search for relevant documents
+    docs = vectordb.similarity_search(user_query, k=3)
+    
+    # Combine document contents
+    context = "\n\n".join(doc.page_content for doc in docs)
+    
+    # Create prompt with context
+    prompt = f"""Based on the following context, answer the user's question. Be concise and specific.
+    If there isn't sufficient information, give as your answer a better query to perform RAG with.
+    
+Context:
+{context}
+
+Question: {user_query}
+
+Answer:"""
+    
+    # Get response from reasoning model
+    response = reasoner.run(prompt, reset=False)
+    return response
+
+# Create the primary agent to direct the conversation
+tool_model = get_model(tool_model_id)
+primary_agent = ToolCallingAgent(tools=[rag_with_reasoner], model=tool_model, add_base_tools=False, max_steps=3)
+
+# Example prompt: Compare and contrast the services offered by RankBoost and Omni Marketing
+def main():
+    GradioUI(primary_agent).launch()
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="README.md">
+# R1 Distill RAG System
+
+This project showcases the power of DeepSeek's R1 model in an agentic RAG (Retrieval-Augmented Generation) system - built using Smolagents from HuggingFace. R1, known for its exceptional reasoning capabilities and instruction-following abilities, serves as the core reasoning engine. The system combines R1's strengths with efficient document retrieval and a separate conversation model to create a powerful, context-aware question-answering system.
+
+## Setup
+
+1. Clone the repository
+
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+# On Windows
+.\venv\Scripts\activate
+# On Unix/MacOS
+source venv/bin/activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+4. Set up environment variables by copying `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+
+5. Configure your `.env` file:
+
+### Using HuggingFace (Cloud API)
+```env
+USE_HUGGINGFACE=yes
+HUGGINGFACE_API_TOKEN=your_token_here
+REASONING_MODEL_ID=deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+TOOL_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
+```
+
+### Using Ollama (Local Inference)
+```env
+USE_HUGGINGFACE=no
+HUGGINGFACE_API_TOKEN=
+REASONING_MODEL_ID=deepseek-r1:7b-8k
+TOOL_MODEL_ID=qwen2.5:14b-instruct-8k
+```
+
+## Setting Up Ollama Models
+
+The following models are recommended examples that provide a good balance of performance and resource usage, but you can use any compatible Ollama models:
+
+1. First, install Ollama from [ollama.ai](https://ollama.ai)
+
+2. Pull the base models:
+```bash
+ollama pull deepseek-r1:7b
+ollama pull qwen2.5:14b-instruct-q4_K_M
+```
+
+3. Create custom models with extended context windows:
+```bash
+# Create Deepseek model with 8k context - recommended for reasoning
+ollama create deepseek-r1:7b-8k -f ollama_models/Deepseek-r1-7b-8k
+
+# Create Qwen model with 8k context - recommended for conversation
+ollama create qwen2.5:14b-instruct-8k -f ollama_models/Qwen-14b-Instruct-8k
+
+# On MacOS you might need to use -from instead of -f
+
+# Create Deepseek model with 8k context - recommended for reasoning
+ollama create deepseek-r1:7b-8k -from ollama_models/Deepseek-r1-7b-8k
+
+# Create Qwen model with 8k context - recommended for conversation
+ollama create qwen2.5:14b-instruct-8k -from ollama_models/Qwen-14b-Instruct-8k
+```
+
+Feel free to experiment with other models or context window sizes by modifying the model files in the `ollama_models` directory.
+
+## Usage
+
+1. Place your PDF documents in the `data` directory:
+```bash
+mkdir data
+# Copy your PDFs into the data directory
+```
+
+2. Ingest the PDFs to create the vector database:
+```bash
+python ingest_pdfs.py
+```
+
+3. Run the RAG application:
+```bash
+python r1_smolagent_rag.py
+```
+
+This will launch a Gradio web interface where you can ask questions about your documents.
+
+## How It Works
+
+1. **Document Ingestion** (`ingest_pdfs.py`):
+   - Loads PDFs from the `data` directory
+   - Splits documents into chunks of 1000 characters with 200 character overlap
+   - Creates embeddings using `sentence-transformers/all-mpnet-base-v2`
+   - Stores vectors in a Chroma database
+
+2. **RAG System** (`r1_smolagent_rag.py`):
+   - Uses two LLMs: one for reasoning and one for tool calling
+   - Retrieves relevant document chunks based on user queries
+   - Generates responses using the retrieved context
+   - Provides a Gradio web interface for interaction
+
+## Model Selection
+
+### HuggingFace Models
+- Recommended for cloud-based inference
+- Requires API token for better rate limits
+- Supports a wide range of models
+- Better for production use with stable API
+
+### Ollama Models
+- Recommended for local inference
+- No API token required
+- Runs entirely on your machine
+- Better for development and testing
+- Supports custom model configurations
+- Lower latency but requires more system resources
+
+## Notes
+- The vector store is persisted in the `chroma_db` directory
+- Default chunk size is 1000 characters with 200 character overlap
+- Embeddings are generated using the `all-mpnet-base-v2` model
+- The system uses a maximum of 3 relevant chunks for context
+</file>
+
+<file path="streamlit.py">
+import streamlit as st
+from r1_smolagent_rag import primary_agent
+
+def init_chat_history():
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+def display_chat_history():
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+def handle_user_input(prompt: str):
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Generate response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response = primary_agent.run(prompt, reset=False)
+            st.markdown(response)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+
+def display_sidebar():
+    with st.sidebar:
+        st.title("About")
+        st.markdown("""
+        This Q&A bot uses RAG (Retrieval Augmented Generation) to answer questions about your documents.
+        
+        The process:
+        1. Your query is used to search through document chunks
+        2. Most relevant chunks are retrieved
+        3. A reasoning model generates an answer based on the context
+        """)
+        
+        if st.button("Clear Chat History"):
+            st.session_state.messages = []
+            st.rerun()
+
+def main():
+    # Set up Streamlit page
+    st.set_page_config(page_title="Document Q&A Bot", layout="wide")
+    st.title("Document Q&A Bot")
+
+    # Initialize chat history
+    init_chat_history()
+
+    # Display chat interface
+    display_chat_history()
+    display_sidebar()
+
+    # Chat input
+    if prompt := st.chat_input("Ask a question about your documents"):
+        handle_user_input(prompt)
+
+if __name__ == "__main__":
+    main()
+</file>
+
+</files>

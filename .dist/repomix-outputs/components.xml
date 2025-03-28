@@ -1,0 +1,303 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+ui/
+  button.tsx
+  card.tsx
+RedditResultsGrid.tsx
+ToolResultsExpander.tsx
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="ui/button.tsx">
+import React from 'react';
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
+  size?: 'default' | 'sm' | 'lg' | 'icon';
+  children: React.ReactNode;
+}
+
+export function Button({
+  className = '',
+  variant = 'default',
+  size = 'default',
+  children,
+  ...props
+}: ButtonProps) {
+  // Base styles
+  let variantClasses = '';
+  let sizeClasses = '';
+
+  // Variant styles
+  switch (variant) {
+    case 'default':
+      variantClasses = 'bg-primary text-primary-foreground hover:bg-primary/90';
+      break;
+    case 'destructive':
+      variantClasses = 'bg-destructive text-destructive-foreground hover:bg-destructive/90';
+      break;
+    case 'outline':
+      variantClasses = 'border border-input bg-background hover:bg-accent hover:text-accent-foreground';
+      break;
+    case 'secondary':
+      variantClasses = 'bg-secondary text-secondary-foreground hover:bg-secondary/80';
+      break;
+    case 'ghost':
+      variantClasses = 'hover:bg-accent hover:text-accent-foreground';
+      break;
+    case 'link':
+      variantClasses = 'text-primary underline-offset-4 hover:underline';
+      break;
+  }
+
+  // Size styles
+  switch (size) {
+    case 'default':
+      sizeClasses = 'h-10 px-4 py-2';
+      break;
+    case 'sm':
+      sizeClasses = 'h-9 rounded-md px-3';
+      break;
+    case 'lg':
+      sizeClasses = 'h-11 rounded-md px-8';
+      break;
+    case 'icon':
+      sizeClasses = 'h-10 w-10';
+      break;
+  }
+
+  const buttonClasses = `inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${variantClasses} ${sizeClasses} ${className}`;
+
+  return (
+    <button className={buttonClasses} {...props}>
+      {children}
+    </button>
+  );
+}
+
+export default Button;
+</file>
+
+<file path="ui/card.tsx">
+import React from 'react';
+
+interface CardProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function Card({ className = '', children }: CardProps) {
+  return (
+    <div className={`rounded-lg border bg-card text-card-foreground shadow-sm ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+interface CardHeaderProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function CardHeader({ className = '', children }: CardHeaderProps) {
+  return (
+    <div className={`flex flex-col space-y-1.5 p-6 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+interface CardTitleProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function CardTitle({ className = '', children }: CardTitleProps) {
+  return (
+    <h3 className={`text-2xl font-semibold leading-none tracking-tight ${className}`}>
+      {children}
+    </h3>
+  );
+}
+
+interface CardContentProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function CardContent({ className = '', children }: CardContentProps) {
+  return (
+    <div className={`p-6 pt-0 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+interface CardFooterProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function CardFooter({ className = '', children }: CardFooterProps) {
+  return (
+    <div className={`flex items-center p-6 pt-0 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+export default {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardFooter
+};
+</file>
+
+<file path="RedditResultsGrid.tsx">
+import React from 'react';
+
+interface RedditResult {
+  subreddit: string;
+  description?: string;
+  subscribers?: number;
+  posts?: any[];
+}
+
+interface RedditResultsGridProps {
+  results: string[] | RedditResult[];
+  className?: string;
+}
+
+export function RedditResultsGrid({ results, className = '' }: RedditResultsGridProps) {
+  // Handle simple string array (just subreddit names)
+  const formattedResults = results.map(result => 
+    typeof result === 'string' 
+      ? { subreddit: result } 
+      : result
+  );
+
+  return (
+    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${className}`}>
+      {formattedResults.map((result, index) => (
+        <div key={index} className="border rounded-md p-4 h-full">
+          <div className="pb-2">
+            <div className="text-lg flex items-center justify-between">
+              <span>r/{result.subreddit}</span>
+              {result.subscribers && (
+                <span className="ml-2 text-sm bg-gray-100 px-2 py-1 rounded-full">
+                  {new Intl.NumberFormat().format(result.subscribers)} members
+                </span>
+              )}
+            </div>
+          </div>
+          <div>
+            {result.description && (
+              <p className="text-sm text-gray-600 line-clamp-3">{result.description}</p>
+            )}
+            {!result.description && (
+              <p className="text-sm text-gray-500 italic">No description available</p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+</file>
+
+<file path="ToolResultsExpander.tsx">
+import React, { useState } from 'react';
+
+interface ToolResultsExpanderProps {
+  toolResults: Record<string, any>;
+  className?: string;
+}
+
+export function ToolResultsExpander({ toolResults, className = '' }: ToolResultsExpanderProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!toolResults || Object.keys(toolResults).length === 0) {
+    return null;
+  }
+
+  const toggleExpand = () => {
+    setIsExpanded(!isExpanded);
+  };
+
+  return (
+    <div className={`w-full border rounded-md ${className}`}>
+      <div className="p-4 pb-2">
+        <div className="text-lg flex items-center justify-between">
+          <div className="flex items-center">
+            <span className="mr-2">🛠️</span>
+            <span>Tool Results</span>
+          </div>
+          <button 
+            className="p-1 rounded-md hover:bg-gray-100"
+            onClick={toggleExpand}
+            aria-label={isExpanded ? "Collapse tool results" : "Expand tool results"}
+          >
+            {isExpanded ? "▲" : "▼"}
+          </button>
+        </div>
+      </div>
+      {isExpanded && (
+        <div className="px-4 pb-4">
+          <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto text-xs">
+            {JSON.stringify(toolResults, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+</files>

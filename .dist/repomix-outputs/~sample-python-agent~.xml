@@ -1,0 +1,741 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.dockerignore
+.env.example
+Dockerfile
+README.md
+requirements.txt
+sample_postgres_agent.py
+sample_supabase_agent.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".env.example">
+# For the Supabase version (sample_supabase_agent.py), set your Supabase URL and Service Key.
+# Get your SUPABASE_URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# For the Postgres version (sample_postgres_agent.py), set your database connection URL.
+# Format: postgresql://[user]:[password]@[host]:[port]/[database_name]
+# Example: postgresql://postgres:mypassword@localhost:5432/mydb
+# For Supabase Postgres connection, you can find this in Database settings -> Connection string -> URI
+DATABASE_URL=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+# Feel free to change sample_supabase_agent to sample_postgres_agent
+CMD ["sh", "-c", "uvicorn sample_supabase_agent:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="README.md">
+# Base Sample Python Agent
+
+Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
+
+This is a sample Python FastAPI agent that demonstrates the minimal required components to build an agent for the autogen_studio. It serves as a template and reference implementation for creating new Python-based agents.
+
+This documentation is long but only because it gives you EVERYTHING you need to build a Python based agent for the autogen_studio! If you spend 5 minutes reading this carefully, you'll be ready to go.
+
+## Overview
+
+This agent provides a foundation for building AI-powered agents that can:
+- Process natural language queries
+- Maintain conversation history
+- Integrate with external AI models
+- Store and retrieve conversation data
+- Handle authentication and security
+
+The agent comes in two variants:
+1. **Supabase Version** (`sample_supabase_agent.py`): Uses Supabase client for database operations
+2. **Postgres Version** (`sample_postgres_agent.py`): Uses direct PostgreSQL connection via asyncpg
+
+## Prerequisites
+
+- Python 3.11 or higher
+- pip (Python package manager)
+- PostgreSQL database or Supabase account
+- Basic understanding of:
+  - FastAPI and async Python
+  - RESTful APIs
+  - Pydantic models
+  - Environment variables
+  - PostgreSQL (for Postgres version)
+
+## Core Components
+
+### 1. FastAPI Application (`sample_supabase_agent.py and sample_postgres_agent.py`)
+
+The main application is built using FastAPI, providing:
+
+- **Authentication**
+  - Bearer token validation via environment variables
+  - Secure endpoint protection
+  - Customizable security middleware
+
+- **Request Handling**
+  - Async endpoint processing
+  - Structured request validation
+  - Error handling and HTTP status codes
+
+- **Database Integration**
+  - Supabase connection management
+  - Message storage and retrieval
+  - Session-based conversation tracking
+
+### 2. Data Models
+
+#### Request Model
+```python
+class AgentRequest(BaseModel):
+    query: str        # The user's input text
+    user_id: str      # Unique identifier for the user
+    request_id: str   # Unique identifier for this request
+    session_id: str   # Current conversation session ID
+```
+
+#### Response Model
+```python
+class AgentResponse(BaseModel):
+    success: bool     # Indicates if the request was processed successfully
+```
+
+### 3. Database Schema
+
+The agent uses Supabase tables with the following structure:
+
+#### Messages Table
+```sql
+messages (
+    id: uuid primary key
+    created_at: timestamp with time zone
+    session_id: text
+    message: jsonb {
+        type: string       # 'human' or 'assistant'
+        content: string    # The message content
+        data: jsonb       # Optional additional data
+    }
+)
+```
+
+## Setup
+
+1. **Clone Repository**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/dislovemartin/SolnAI-agents.git
+   cd SolnAI-agents/~sample-python-agent~
+
+   # Copy example environment file
+   cp .env.example .env
+
+   # Edit .env with your credentials
+   nano .env  # or use your preferred editor
+   ```
+
+2. **Configure Environment Variables**
+
+   > ⚠️ **Important**: For Docker, do not wrap environment variable values in quotes, even if they contain special characters. Docker will handle the values correctly without quotes.
+
+   #### Supabase Configuration
+   Required environment variables in `.env` file (do not use quotes around values):
+   ```plaintext
+   SUPABASE_URL=your-project-url
+   SUPABASE_SERVICE_KEY=your-service-key
+   API_BEARER_TOKEN=your-token-here
+   ```
+
+   #### PostgreSQL Configuration
+   Required environment variables:
+   ```plaintext
+   DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+   API_BEARER_TOKEN=your-chosen-token
+   ```
+
+   The DATABASE_URL format is:
+   ```
+   postgresql://[user]:[password]@[host]:[port]/[database_name]
+   ```
+
+3. **Create Database Tables**
+   For both Supabase and PostgreSQL, you'll need to create the following tables:
+   ```sql
+   -- Enable the pgcrypto extension for UUID generation
+   CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+   CREATE TABLE messages (
+       id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       session_id TEXT NOT NULL,
+       message JSONB NOT NULL
+   );
+
+   CREATE INDEX idx_messages_session_id ON messages(session_id);
+   CREATE INDEX idx_messages_created_at ON messages(created_at);
+   ```
+
+   > Note: If you're using Supabase, the `pgcrypto` extension is already enabled by default.
+
+## Installation Methods
+
+### Docker Installation (Recommended)
+
+1. Build the base image first (make sure Docker is running on your machine):
+```bash
+cd ../base_python_docker
+docker build -t ottomator/base-python:latest .
+cd ../~sample-python-agent~
+```
+
+2. Build the agent image (you can swap between Supabase and PostgreSQL versions in the `Dockerfile`):
+```bash
+docker build -t sample-python-agent .
+```
+
+3. Run the container:
+```bash
+docker run -d --name sample-python-agent -p 8001:8001 --env-file .env sample-python-agent
+```
+
+The agent will be available at `http://localhost:8001`.
+
+### Local Installation (Docker Alternative)
+
+1. Create and activate virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+2. Run the agent:
+
+For Supabase version:
+```bash
+uvicorn sample_supabase_agent:app --host 0.0.0.0 --port 8001
+```
+
+For PostgreSQL version:
+```bash
+uvicorn sample_postgres_agent:app --host 0.0.0.0 --port 8001
+```
+
+## Configuration
+
+The agent uses environment variables for configuration. You can set these variables in a `.env` file or using your operating system's environment variable settings.
+
+## Making Your First Request
+
+Test your agent using curl or any HTTP client:
+
+### Supabase Version
+```bash
+curl -X POST http://localhost:8001/api/sample-supabase-agent \
+  -H "Authorization: Bearer your-token-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Hello, agent!",
+    "user_id": "test-user",
+    "request_id": "test-request-1",
+    "session_id": "test-session-1"
+  }'
+```
+
+### Postgres Version
+```bash
+curl -X POST http://localhost:8001/api/sample-postgres-agent \
+  -H "Authorization: Bearer your-token-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Hello, agent!",
+    "user_id": "test-user",
+    "request_id": "test-request-1",
+    "session_id": "test-session-1"
+  }'
+```
+
+## Building Your Own Agent
+
+1. **Fork the Template**
+   - Create a copy of this sample agent
+   - Rename files and update paths as needed
+
+2. **Customize the Agent Logic**
+   - Locate the TODO section in `sample_supabase_agent.py` or `sample_postgres_agent.py`
+   - Add your custom agent logic:
+     ```python
+     # Example: Add AI model integration
+     async def get_ai_response(query: str, history: List[Dict]) -> str:
+         # Add your AI model logic here
+         # e.g., OpenAI, Anthropic, or custom models
+         return "AI response"
+
+     @app.post("/api/your-agent", response_model=AgentResponse)
+     async def your_agent(request: AgentRequest):
+         # Get conversation history
+         history = await fetch_conversation_history(request.session_id)
+         
+         # Process with your AI model
+         response = await get_ai_response(request.query, history)
+         
+         # Store the response
+         await store_message(
+             session_id=request.session_id,
+             message_type="assistant",
+             content=response
+         )
+         
+         return AgentResponse(success=True)
+     ```
+
+3. **Add Dependencies**
+   - Update `requirements.txt` with new packages
+   - Document any external services or APIs
+
+4. **Implement Error Handling**
+   ```python
+   try:
+       result = await your_operation()
+   except YourCustomError as e:
+       raise HTTPException(
+           status_code=400,
+           detail=f"Operation failed: {str(e)}"
+       )
+   ```
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Authentication Errors**
+   - Verify bearer token in environment
+   - Check Authorization header format
+   - Ensure token matches exactly
+
+2. **Database Connection Issues**
+   - For Supabase:
+     - Verify Supabase credentials
+     - Validate table permissions
+   - For PostgreSQL:
+     - Check DATABASE_URL format
+     - Verify database user permissions
+     - Ensure database is running and accessible
+     - Check if tables are created correctly
+
+3. **Performance Problems**
+   - Check database query performance
+   - Consider caching frequently accessed data
+   - For PostgreSQL:
+     - Monitor connection pool usage
+     - Adjust pool size if needed (default is reasonable for most cases)
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+fastapi
+uvicorn
+pydantic
+supabase
+python-dotenv
+asyncpg
+</file>
+
+<file path="sample_postgres_agent.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import asyncpg
+import json
+import sys
+import os
+
+# Load environment variables
+load_dotenv()
+
+# Database connection pool
+db_pool = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global db_pool
+    db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"))
+    yield
+    # Shutdown
+    if db_pool:
+        await db_pool.close()
+
+# Initialize FastAPI app
+app = FastAPI(lifespan=lifespan)
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, created_at, session_id, message
+                FROM messages 
+                WHERE session_id = $1 
+                ORDER BY created_at DESC 
+                LIMIT $2
+            """, session_id, limit)
+            
+            # Convert to list and reverse to get chronological order
+            messages = [
+                {
+                    "id": str(row["id"]),
+                    "created_at": row["created_at"].isoformat(),
+                    "session_id": row["session_id"],
+                    "message": row["message"]
+                }
+                for row in rows
+            ]
+            return messages[::-1]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO messages (session_id, message)
+                VALUES ($1, $2)
+            """, session_id, json.dumps(message_obj))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/sample-postgres-agent", response_model=AgentResponse)
+async def sample_postgres_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history from the DB
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = {"role": msg_type, "content": msg_content}
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        """
+        TODO:
+        This is where you insert the custom logic to get the response from your agent.
+        Your agent can also insert more records into the database to communicate
+        actions/status as it is handling the user's question/request.
+        Additionally:
+            - Use the 'messages' array defined about for the chat history. This won't include the latest message from the user.
+            - Use request.query for the user's prompt.
+            - Use request.session_id if you need to insert more messages into the DB in the agent logic.
+        """
+        agent_response = "This is a sample agent response..."
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="assistant",
+            content=agent_response
+        )
+
+        return AgentResponse(success=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="sample_supabase_agent.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
+import os
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/sample-supabase-agent", response_model=AgentResponse)
+async def sample_supabase_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history from the DB
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        # This will be different depending on your framework (Pydantic AI, LangChain, etc.)
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = {"role": msg_type, "content": msg_content}
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        """
+        TODO:
+        This is where you insert the custom logic to get the response from your agent.
+        Your agent can also insert more records into the database to communicate
+        actions/status as it is handling the user's question/request.
+        Additionally:
+            - Use the 'messages' array defined about for the chat history. This won't include the latest message from the user.
+            - Use request.query for the user's prompt.
+            - Use request.session_id if you need to insert more messages into the DB in the agent logic.
+        """
+        agent_response = "This is a sample agent response..."
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=agent_response,
+            data={"request_id": request.request_id}
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+</files>

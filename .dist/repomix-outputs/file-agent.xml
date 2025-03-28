@@ -1,0 +1,381 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.env.example
+file_agent.py
+README.md
+requirements.txt
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".env.example">
+# Get your Open AI API Key by following these instructions -
+# https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# You only need this environment variable set if you are using GPT (and not Ollama)
+OPENAI_API_KEY=
+
+# For the Supabase version (sample_supabase_agent.py), set your Supabase URL and Service Key.
+# Get your SUPABASE_URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+</file>
+
+<file path="file_agent.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
+import os
+import base64
+from openai import OpenAI
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app and OpenAI client
+app = FastAPI()
+security = HTTPBearer()
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+    files: Optional[List[Dict[str, Any]]] = None
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+def process_files_to_string(files: Optional[List[Dict[str, Any]]]) -> str:
+    """Convert a list of files with base64 content into a formatted string."""
+    if not files:
+        return ""
+        
+    file_content = "File content to use as context:\n\n"
+    for i, file in enumerate(files, 1):
+        decoded_content = base64.b64decode(file['base64']).decode('utf-8')
+        file_content += f"{i}. {file['name']}:\n\n{decoded_content}\n\n"
+    return file_content        
+
+@app.post("/api/file-agent", response_model=AgentResponse)
+async def file_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history from the DB
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = "user" if msg_data["type"] == "human" else "assistant" # Type conversion for OpenAI API
+            msg_content = msg_data["content"]
+            
+            # Process files if they exist in the message data
+            if msg_type == "user" and "data" in msg_data and "files" in msg_data["data"]:
+                files_content = process_files_to_string(msg_data["data"]["files"])
+                if files_content:
+                    msg_content = f"{files_content}\n\n{msg_content}"
+            
+            messages.append({"role": msg_type, "content": msg_content})
+
+        # Store user's query with files if present
+        message_data = {"request_id": request.request_id}
+        if request.files:
+            message_data["files"] = request.files
+
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query,
+            data=message_data
+        )
+
+        # Prepare current message with files for OpenAI
+        current_message = request.query
+        if request.files:
+            files_content = process_files_to_string(request.files)
+            current_message = f"{files_content}\n\n{current_message}"
+
+        # Prepare messages for OpenAI
+        openai_messages = []
+        openai_messages.extend(messages)  # Add conversation history
+        openai_messages.append({"role": "user", "content": current_message})
+
+        # Get response from OpenAI
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=openai_messages
+        )
+        agent_response = completion.choices[0].message.content
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=agent_response,
+            data={"request_id": request.request_id}
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="README.md">
+# File Processing Agent for autogen_studio
+
+Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
+
+This is a specialized Python FastAPI agent that demonstrates how to handle file uploads in the autogen_studio. It shows how to process, store, and leverage file content in conversations with AI models.
+
+This agent builds upon the foundation laid out in [`~sample-python-agent~/sample_supabase_agent.py`](../~sample-python-agent~/sample_supabase_agent.py), extending it with file handling capabilities.
+
+Not all agents need file handling which is why the sample Python agent is kept simple and this one is available to help you build agents with file handling capabilities. The autogen_studio has file uploading built in and the files are sent in the exact format shown in this agent.
+
+## Overview
+
+This agent extends the base Python agent template to showcase file handling capabilities:
+- Process uploaded files in base64 format
+- Store file content with conversation history
+- Integrate file content into AI model context
+- Maintain conversation continuity with file references
+- Handle multiple files in a single conversation
+
+## Prerequisites
+
+- Python 3.11 or higher
+- pip (Python package manager)
+- Supabase account (for conversation storage)
+- OpenAI API key
+- Basic understanding of:
+  - FastAPI and async Python
+  - Base64 encoding/decoding
+  - OpenAI API
+  - Supabase
+
+## Core Components
+
+### 1. File Processing
+
+The agent includes robust file handling:
+- Base64 decoding of uploaded files
+- Text extraction and formatting
+- Persistent storage of file data
+- Context integration for AI responses
+
+### 2. Conversation Management
+
+Built on the sample Supabase agent template, this agent adds:
+- File metadata storage with messages
+- File content integration in conversation history
+- Contextual file reference handling
+
+### 3. AI Integration
+
+Seamless integration with OpenAI's GPT models:
+- File content as conversation context
+- Maintained context across multiple messages
+- Intelligent responses based on file content
+
+## Setup Instructions
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Set up environment variables in `.env`:
+   ```
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_KEY=your_supabase_key
+   API_BEARER_TOKEN=your_bearer_token
+   OPENAI_API_KEY=your_openai_key
+   ```
+
+## Running the Agent
+
+Start the agent with:
+```bash
+python file_agent.py
+```
+
+The agent will be available at `http://localhost:8001`.
+
+## API Usage
+
+Send requests to `/api/file-agent` with:
+- `query`: Your question or prompt
+- `files`: Array of file objects with:
+  - `name`: Filename
+  - `type`: MIME type
+  - `base64`: Base64-encoded file content
+
+Example request:
+```json
+{
+  "query": "What does this file contain?",
+  "files": [{
+    "name": "example.txt",
+    "type": "text/plain",
+    "base64": "VGhpcyBpcyBhIHRlc3QgZmlsZS4="
+  }],
+  "session_id": "unique-session-id",
+  "user_id": "user-id",
+  "request_id": "request-id"
+}
+```
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+fastapi
+uvicorn
+pydantic
+supabase
+python-dotenv
+asyncpg
+openai
+</file>
+
+</files>

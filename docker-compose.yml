@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  # --- Base Image ---
+  # Note: This service primarily exists to build the base image.
+  # Other services can use `image: solnai/base-python:latest` or `build.target`
+  # if their Dockerfiles are multi-stage and refer to the base stage.
+  # We don't typically run the base image directly.
+  base-python:
+    build:
+      context: ./base_python_docker
+      dockerfile: Dockerfile
+    image: solnai/base-python:latest
+
+  # --- Agent Services ---
+  archon:
+    build:
+      context: ./Archon
+      dockerfile: Dockerfile
+    image: solnai/archon:latest
+    env_file:
+      - ./Archon/.env
+    ports:
+      - "8001:8000" # Exposing on 8001 host -> 8000 container (adjust as needed)
+    # Add depends_on if this service needs others running first
+    # depends_on:
+    #   - some-other-service
+
+  tinydm-agent:
+    build:
+      context: ./TinyDM-agent
+      dockerfile: Dockerfile
+    image: solnai/tinydm-agent:latest
+    env_file:
+      - ./TinyDM-agent/.env
+    ports:
+      - "8002:8000"
+
+  ask-reddit-agent:
+    build:
+      context: ./ask-reddit-agent
+      dockerfile: Dockerfile
+    image: solnai/ask-reddit-agent:latest
+    env_file:
+      - ./ask-reddit-agent/.env
+    ports:
+      - "8003:8000"
+
+  genericsuite-app-maker-agent:
+    build:
+      context: ./genericsuite-app-maker-agent
+      dockerfile: Dockerfile
+    image: solnai/genericsuite-app-maker-agent:latest
+    env_file:
+      - ./genericsuite-app-maker-agent/.env
+    ports:
+      - "8004:8000"
+
+  lead-generator-agent:
+    build:
+      context: ./lead-generator-agent
+      dockerfile: Dockerfile
+    image: solnai/lead-generator-agent:latest
+    env_file:
+      - ./lead-generator-agent/.env
+    ports:
+      - "8005:8000"
+
+  nba-agent:
+    build:
+      context: ./nba-agent
+      dockerfile: Dockerfile
+    image: solnai/nba-agent:latest
+    env_file:
+      - ./nba-agent/.env
+    ports:
+      - "8006:8000"
+
+  ottomarkdown-agent:
+    build:
+      context: ./ottomarkdown-agent
+      dockerfile: Dockerfile
+    image: solnai/ottomarkdown-agent:latest
+    env_file:
+      - ./ottomarkdown-agent/.env
+    ports:
+      - "8007:8000"
+
+  pydantic-github-agent:
+    build:
+      context: ./pydantic-github-agent
+      dockerfile: Dockerfile
+    image: solnai/pydantic-github-agent:latest
+    env_file:
+      - ./pydantic-github-agent/.env
+    ports:
+      - "8008:8000"
+
+  streambuzz-agent:
+    build:
+      context: ./streambuzz-agent
+      dockerfile: Dockerfile
+    image: solnai/streambuzz-agent:latest
+    env_file:
+      - ./streambuzz-agent/.env
+    ports:
+      - "8009:8000"
+
+  thirdbrain-mcp-openai-agent:
+    build:
+      context: ./thirdbrain-mcp-openai-agent
+      dockerfile: Dockerfile
+    image: solnai/thirdbrain-mcp-openai-agent:latest
+    env_file:
+      - ./thirdbrain-mcp-openai-agent/.env
+    ports:
+      - "8010:8000"
+
+  tweet-generator-agent:
+    build:
+      context: ./tweet-generator-agent
+      dockerfile: Dockerfile
+    image: solnai/tweet-generator-agent:latest
+    env_file:
+      - ./tweet-generator-agent/.env
+    ports:
+      - "8011:8000"
+
+  website-redesign-agent:
+    build:
+      context: ./website-redesign-agent
+      dockerfile: Dockerfile
+    image: solnai/website-redesign-agent:latest
+    env_file:
+      - ./website-redesign-agent/.env
+    ports:
+      - "8012:8000"
+
+  youtube-summary-agent:
+    build:
+      context: ./youtube-summary-agent
+      dockerfile: Dockerfile
+    image: solnai/youtube-summary-agent:latest
+    env_file:
+      - ./youtube-summary-agent/.env
+    ports:
+      - "8013:8000"
+
+  sample-python-agent:
+    build:
+      context: ./~sample-python-agent~
+      dockerfile: Dockerfile
+    image: solnai/sample-python-agent:latest
+    env_file:
+      - ./~sample-python-agent~/.env
+    ports:
+      - "8014:8000" # Default sample agent port
+
+  voiceflow-dialog-api-integration:
+    build:
+      context: ./~voiceflow-dialog-api-integration~
+      dockerfile: Dockerfile
+    image: solnai/voiceflow-dialog-api-integration:latest
+    env_file:
+      - ./~voiceflow-dialog-api-integration~/.env
+    ports:
+      - "8015:8000"
+
+# Add volumes for persistent data if needed, e.g., databases
+# volumes:
+#   postgres_data:
+
+# Add networks if needed for complex communication
+# networks:
+#   agent_network:
+#     driver: bridge

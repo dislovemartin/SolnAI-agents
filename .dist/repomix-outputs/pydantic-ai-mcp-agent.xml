@@ -1,0 +1,1421 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+extras/
+  basic_mcp_agent.py
+  experimental_mcp_client.py
+  non_mcp_agent.py
+  pydantic_mcp_streamlit.py
+studio-integration-version/
+  .dockerignore
+  .env.example
+  Dockerfile
+  mcp_client.py
+  pydantic_mcp_agent_endpoint.py
+  pydantic_mcp_agent.py
+.env.example
+.gitignore
+mcp_client.py
+mcp_config_example.json
+pydantic_mcp_agent.py
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="extras/basic_mcp_agent.py">
+from dotenv import load_dotenv
+import pathlib
+import asyncio
+import sys
+import os
+
+from pydantic_ai import Agent
+from openai import AsyncOpenAI, OpenAI
+from pydantic_ai.models.openai import OpenAIModel
+
+import mcp_client
+
+# Get the directory where the current script is located
+SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
+# Define the path to the config file relative to the script directory
+CONFIG_FILE = SCRIPT_DIR / "mcp_config.json"
+
+load_dotenv()
+
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+
+    return OpenAIModel(
+        llm,
+        base_url=base_url,
+        api_key=api_key
+    )
+
+async def get_pydantic_ai_agent():
+    client = mcp_client.MCPClient()
+    client.load_servers(str(CONFIG_FILE))
+    tools = await client.start()
+    return client, Agent(model=get_model(), tools=tools)
+
+async def main():
+    client, agent = await get_pydantic_ai_agent()
+    while True:
+        # Example: Search the web to find the newest local LLMs.
+        user_input = input("\n[You] ")
+        
+        # Check if user wants to exit
+        if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
+            print("Goodbye!")
+            break
+
+        result = await agent.run(user_input)
+        print('[Assistant] ', result.data)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+</file>
+
+<file path="extras/experimental_mcp_client.py">
+from pydantic_ai import RunContext, Tool as PydanticTool
+from pydantic_ai.tools import ToolDefinition
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.types import Tool as MCPTool
+from contextlib import AsyncExitStack
+from dotenv import load_dotenv
+from typing import Any, List
+import asyncio
+import logging
+import shutil
+import json
+import os
+
+logging.basicConfig(
+    level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+class MCPClient:
+    """Manages connections to one or more MCP servers based on mcp_config.json"""
+
+    def __init__(self) -> None:
+        self.servers: List[MCPServer] = []
+        self.config: dict[str, Any] = {}
+        self.tools: List[Any] = []
+        self.exit_stack = AsyncExitStack()
+
+    def load_servers(self, config_path: str) -> None:
+        """Load server configuration from a JSON file (typically mcp_config.json)
+        and creates an instance of each server (no active connection until 'start' though).
+
+        Args:
+            config_path: Path to the JSON configuration file.
+        """
+        with open(config_path, "r") as config_file:
+            self.config = json.load(config_file)
+
+        self.servers = [MCPServer(name, config) for name, config in self.config["mcpServers"].items()]
+
+    async def start(self) -> List[PydanticTool]:
+        """Starts each MCP server and returns the tools for each server formatted for Pydantic AI."""
+        self.tools = []
+        for server in self.servers:
+            try:
+                await server.initialize()
+                tools = await server.create_pydantic_ai_tools()
+                self.tools += tools
+            except Exception as e:
+                logging.error(f"Failed to initialize server: {e}")
+                await self.cleanup_servers()
+                return []
+
+        return self.tools
+
+    async def cleanup_servers(self) -> None:
+        """Clean up all servers properly."""
+        for server in self.servers:
+            try:
+                await server.cleanup()
+            except Exception as e:
+                logging.warning(f"Warning during cleanup of server {server.name}: {e}")
+
+    async def cleanup(self) -> None:
+        """Clean up all resources including the exit stack."""
+        try:
+            # First clean up all servers
+            await self.cleanup_servers()
+            # Then close the exit stack
+            await self.exit_stack.aclose()
+        except Exception as e:
+            logging.warning(f"Warning during final cleanup: {e}")
+
+
+class MCPServer:
+    """Manages MCP server connections and tool execution."""
+
+    def __init__(self, name: str, config: dict[str, Any]) -> None:
+        self.name: str = name
+        self.config: dict[str, Any] = config
+        self.stdio_context: Any | None = None
+        self.session: ClientSession | None = None
+        self._cleanup_lock: asyncio.Lock = asyncio.Lock()
+        self.exit_stack: AsyncExitStack = AsyncExitStack()
+
+    async def initialize(self) -> None:
+        """Initialize the server connection."""
+        command = (
+            shutil.which("npx")
+            if self.config["command"] == "npx"
+            else self.config["command"]
+        )
+        if command is None:
+            raise ValueError("The command must be a valid string and cannot be None.")
+
+        server_params = StdioServerParameters(
+            command=command,
+            args=self.config["args"],
+            env=self.config["env"]
+            if self.config.get("env")
+            else None,
+        )
+        try:
+            stdio_transport = await self.exit_stack.enter_async_context(
+                stdio_client(server_params)
+            )
+            read, write = stdio_transport
+            session = await self.exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            await session.initialize()
+            self.session = session
+        except Exception as e:
+            logging.error(f"Error initializing server {self.name}: {e}")
+            await self.cleanup()
+            raise
+
+    async def create_pydantic_ai_tools(self) -> List[PydanticTool]:
+        """Convert MCP tools to pydantic_ai Tools."""
+        tools = (await self.session.list_tools()).tools
+        return [self.create_tool_instance(tool) for tool in tools]            
+
+    def create_tool_instance(self, tool: MCPTool) -> PydanticTool:
+        """Initialize a Pydantic AI Tool from an MCP Tool."""
+        async def execute_tool(**kwargs: Any) -> Any:
+            return await self.session.call_tool(tool.name, arguments=kwargs)
+
+        async def prepare_tool(ctx: RunContext, tool_def: ToolDefinition) -> ToolDefinition | None:
+            tool_def.parameters_json_schema = tool.inputSchema
+            return tool_def
+        
+        return PydanticTool(
+            execute_tool,
+            name=tool.name,
+            description=tool.description or "",
+            takes_ctx=False,
+            prepare=prepare_tool
+        )
+
+    async def cleanup(self) -> None:
+        """Clean up server resources."""
+        async with self._cleanup_lock:
+            try:
+                await self.exit_stack.aclose()
+                self.session = None
+                self.stdio_context = None
+            except Exception as e:
+                logging.error(f"Error during cleanup of server {self.name}: {e}")
+</file>
+
+<file path="extras/non_mcp_agent.py">
+from dotenv import load_dotenv
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+import pathlib
+import asyncio
+import sys
+import os
+import logfire
+from httpx import AsyncClient
+
+from pydantic_ai import Agent
+from openai import AsyncOpenAI, OpenAI
+from pydantic_ai.models.openai import OpenAIModel
+
+load_dotenv()
+
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+
+    return OpenAIModel(
+        llm,
+        base_url=base_url,
+        api_key=api_key
+    )
+
+@dataclass
+class Deps:
+    client: AsyncClient
+    brave_api_key: str | None
+
+agent = Agent(model=get_model(), deps_type=Deps)
+
+@agent.tool
+async def search_web(
+    ctx: RunContext[Deps], web_query: str
+) -> str:
+    """Search the web given a query defined to answer the user's question.
+
+    Args:
+        ctx: The context.
+        web_query: The query for the web search.
+
+    Returns:
+        str: The search results as a formatted string.
+    """
+    if ctx.deps.brave_api_key is None:
+        return "This is a test web search result. Please provide a Brave API key to get real search results."
+
+    headers = {
+        'X-Subscription-Token': ctx.deps.brave_api_key,
+        'Accept': 'application/json',
+    }
+    
+    with logfire.span('calling Brave search API', query=web_query) as span:
+        r = await ctx.deps.client.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            params={
+                'q': web_query,
+                'count': 5,
+                'text_decorations': True,
+                'search_lang': 'en'
+            },
+            headers=headers
+        )
+        r.raise_for_status()
+        data = r.json()
+        span.set_attribute('response', data)
+
+    results = []
+    
+    # Add web results in a nice formatted way
+    web_results = data.get('web', {}).get('results', [])
+    for item in web_results[:3]:
+        title = item.get('title', '')
+        description = item.get('description', '')
+        url = item.get('url', '')
+        if title and description:
+            results.append(f"Title: {title}\nSummary: {description}\nSource: {url}\n")
+
+    return "\n".join(results) if results else "No results found for the query."
+
+async def main():
+    while True:
+        # Example: Search the web to find the newest local LLMs.
+        user_input = input("\n[You] ")
+        
+        # Check if user wants to exit
+        if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
+            print("Goodbye!")
+            break
+
+        async with AsyncClient() as client:
+            brave_api_key = os.getenv('BRAVE_API_KEY', None)
+            deps = Deps(client=client, brave_api_key=brave_api_key)
+
+            result = await agent.run(
+                user_input, deps=deps
+            )
+            
+            print('Response:', result.data)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+</file>
+
+<file path="extras/pydantic_mcp_streamlit.py">
+from dotenv import load_dotenv
+from httpx import AsyncClient
+from datetime import datetime
+import streamlit as st
+import asyncio
+import pathlib
+import json
+import os
+
+from pydantic_ai import Agent
+from openai import AsyncOpenAI, OpenAI
+from pydantic_ai.models.openai import OpenAIModel
+
+# Import all the message part classes
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    SystemPromptPart,
+    UserPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    RetryPromptPart,
+    ModelMessagesTypeAdapter
+)
+
+import mcp_client
+
+# Get the directory where the current script is located
+SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
+# Define the path to the config file relative to the script directory
+CONFIG_FILE = SCRIPT_DIR / "mcp_config.json"
+
+load_dotenv()
+
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+
+    return OpenAIModel(
+        llm,
+        base_url=base_url,
+        api_key=api_key
+    )
+
+async def get_pydantic_ai_agent():
+    client = mcp_client.MCPClient()
+    client.load_servers(str(CONFIG_FILE))
+    tools = await client.start()
+    return Agent(model=get_model(), tools=tools)  
+
+def display_message_part(part):
+    """
+    Display a single part of a message in the Streamlit UI.
+    Customize how you display system prompts, user prompts,
+    tool calls, tool returns, etc.
+    """
+    # system-prompt
+    if part.part_kind == 'system-prompt':
+        with st.chat_message("system"):
+            st.markdown(f"**System**: {part.content}")
+    # user-prompt
+    elif part.part_kind == 'user-prompt':
+        with st.chat_message("user"):
+            st.markdown(part.content)
+    # text
+    elif part.part_kind == 'text':
+        with st.chat_message("assistant"):
+            st.markdown(part.content)             
+
+async def run_agent_with_streaming(mcp_agent, user_input):
+    async with st.session_state.mcp_agent.run_stream(
+        user_input, deps=deps, message_history=st.session_state.messages
+    ) as result:
+        async for message in result.stream_text(delta=True):  
+            yield message
+
+    # Add the new messages to the chat history (including tool calls and responses)
+    st.session_state.messages.append(result.all_messages())
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~ Main Function with UI Creation ~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async def main():
+    st.title("Pydantic AI MCP Chatbot")
+
+    # Initialize chat history in session state if not present
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "mcp_agent" not in st.session_state:
+        st.session_state.messages.mcp_agent = await get_pydantic_ai_agent()  
+
+    # Display all messages from the conversation so far
+    # Each message is either a ModelRequest or ModelResponse.
+    # We iterate over their parts to decide how to display them.
+    for msg in st.session_state.messages:
+        if isinstance(msg, ModelRequest) or isinstance(msg, ModelResponse):
+            for part in msg.parts:
+                display_message_part(part)
+
+    # Chat input for the user
+    user_input = st.chat_input("What do you want to do today?")
+
+    if user_input:
+        # Display user prompt in the UI
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        # Display the assistant's partial response while streaming
+        with st.chat_message("assistant"):
+            # Actually run the agent now, streaming the text
+            await run_agent_with_streaming(mcp_agent, user_input)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="studio-integration-version/.dockerignore">
+__pycache__
+venv
+</file>
+
+<file path="studio-integration-version/.env.example">
+# Options supported are:
+# 1. OpenAI
+# 2. OpenRouter
+# 3. Ollama
+PROVIDER=
+
+# Base URL for the OpenAI instance (default is https://api.openai.com/v1)
+# OpenAI: https://api.openai.com/v1
+# Ollama (example): http://localhost:11434/v1
+# OpenRouter: https://openrouter.ai/api/v1
+BASE_URL=
+
+# OpenAI: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# Open Router: Get your API Key here after registering: https://openrouter.ai/keys
+# Ollama: No need to set this unless you specifically configured an API key
+LLM_API_KEY=
+
+# The LLM you want to use for the agents. Make sure this LLM supports tools (especially important if using Ollama)!
+# OpenAI example: gpt-4o-mini
+# OpenRouter example: anthropic/claude-3.7-sonnet
+# Ollama example: qwen2.5:14b-instruct-8k
+MODEL_CHOICE=
+
+# Get your Supabase DATABASE_URL from the Database section of your Supabase project settings-
+# https://supabase.com/dashboard/project/<your project ID>/settings/database
+# Make sure you replace the [YOUR-PASSWORD] placeholder with your DB password you set when creating your account.
+# Be sure ot use URL coding for your password (example, '@' is %40, '?' is %3F, etc.)
+# You can reset this if needed on the same database settings page.
+DATABASE_URL=
+
+# Supabase configuration for authentication
+# Get these from your Supabase project settings -> API
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+
+# Bearer token you define to secure your agent endpoint
+API_BEARER_TOKEN=
+</file>
+
+<file path="studio-integration-version/Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Install the Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+CMD ["sh", "-c", "uvicorn pydantic_mcp_agent_endpoint:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="studio-integration-version/mcp_client.py">
+from pydantic_ai import RunContext, Tool as PydanticTool
+from pydantic_ai.tools import ToolDefinition
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.types import Tool as MCPTool
+from contextlib import AsyncExitStack
+from dotenv import load_dotenv
+from typing import Any, List
+import asyncio
+import logging
+import shutil
+import json
+import os
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+class MCPClient:
+    """Manages connections to one or more MCP servers based on mcp_config.json"""
+
+    def __init__(self) -> None:
+        self.servers: MCPServer = []
+        self.config: dict[str, Any] = {}
+        self.tools: List[Any] = []
+
+    def load_servers(self, config_path: str) -> None:
+        """Load server configuration from a JSON file (typically mcp_config.json)
+        and creates an instance of each server (no active connection until 'start' though).
+
+        Args:
+            config_path: Path to the JSON configuration file.
+        """
+        with open(config_path, "r") as config_file:
+            self.config = json.load(config_file)
+
+        self.servers = [MCPServer(name, config) for name, config in self.config["mcpServers"].items()]
+
+    async def start(self) -> List[PydanticTool]:
+        """Starts each MCP server and returns the tools for each server formatted for Pydantic AI."""
+        self.tools = []
+        for server in self.servers:
+            try:
+                await server.initialize()
+                tools = await server.create_pydantic_ai_tools()
+                self.tools += tools
+            except Exception as e:
+                logging.error(f"Failed to initialize server: {e}")
+                await self.cleanup_servers()
+                raise
+                return
+
+        return self.tools
+
+    async def cleanup_servers(self) -> None:
+        """Clean up all servers properly."""
+        cleanup_tasks = []
+        for server in self.servers:
+            cleanup_tasks.append(asyncio.create_task(server.cleanup()))
+
+        if cleanup_tasks:
+            try:
+                await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            except Exception as e:
+                logging.warning(f"Warning during final cleanup: {e}")
+
+
+class MCPServer:
+    """Manages MCP server connections and tool execution."""
+
+    def __init__(self, name: str, config: dict[str, Any]) -> None:
+        self.name: str = name
+        self.config: dict[str, Any] = config
+        self.stdio_context: Any | None = None
+        self.session: ClientSession | None = None
+        self._cleanup_lock: asyncio.Lock = asyncio.Lock()
+        self.exit_stack: AsyncExitStack = AsyncExitStack()
+
+    async def initialize(self) -> None:
+        """Initialize the server connection."""
+        command = (
+            shutil.which("npx")
+            if self.config["command"] == "npx"
+            else self.config["command"]
+        )
+        if command is None:
+            raise ValueError("The command must be a valid string and cannot be None.")
+
+        server_params = StdioServerParameters(
+            command=command,
+            args=self.config["args"],
+            env=self.config["env"]
+            if self.config.get("env")
+            else None,
+        )
+        try:
+            stdio_transport = await self.exit_stack.enter_async_context(
+                stdio_client(server_params)
+            )
+            read, write = stdio_transport
+            session = await self.exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            await session.initialize()
+            self.session = session
+        except Exception as e:
+            logging.error(f"Error initializing server {self.name}: {e}")
+            await self.cleanup()
+            raise
+
+    async def create_pydantic_ai_tools(self) -> List[PydanticTool]:
+        """Convert MCP tools to pydantic_ai Tools."""
+        tools = (await self.session.list_tools()).tools
+        return [self.create_tool_instance(tool) for tool in tools]            
+
+    def create_tool_instance(self, tool: MCPTool) -> PydanticTool:
+        """Initialize a Pydantic AI Tool from an MCP Tool."""
+        async def execute_tool(**kwargs: Any) -> Any:
+            return await self.session.call_tool(tool.name, arguments=kwargs)
+
+        async def prepare_tool(ctx: RunContext, tool_def: ToolDefinition) -> ToolDefinition | None:
+            tool_def.parameters_json_schema = tool.inputSchema
+            return tool_def
+        
+        return PydanticTool(
+            execute_tool,
+            name=tool.name,
+            description=tool.description or "",
+            takes_ctx=False,
+            prepare=prepare_tool
+        )
+
+    async def cleanup(self) -> None:
+        """Clean up server resources."""
+        async with self._cleanup_lock:
+            try:
+                await self.exit_stack.aclose()
+                self.session = None
+                self.stdio_context = None
+            except Exception as e:
+                logging.error(f"Error during cleanup of server {self.name}: {e}")
+</file>
+
+<file path="studio-integration-version/pydantic_mcp_agent_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import httpx
+import sys
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+from pydantic_mcp_agent import get_pydantic_ai_agent
+
+# Load environment variables
+load_dotenv()
+
+mcp_agent = None
+
+# Define a lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: initialize resources
+    global mcp_agent
+    mcp_agent = await get_pydantic_ai_agent()
+    
+    yield
+
+# Initialize FastAPI app
+app = FastAPI(lifespan=lifespan)
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/pydantic-mcp-agent", response_model=AgentResponse)
+async def pydantic_mcp_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=msg_content)])
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )        
+
+        # Run the agent with conversation history
+        result = await mcp_agent.run(
+            request.query,
+            message_history=messages
+        )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=result.data,
+            data={"request_id": request.request_id}
+        )
+
+        # Update memories based on the last user message and agent response
+        memory_messages = [
+            {"role": "user", "content": request.query},
+            {"role": "assistant", "content": result.data}
+        ]   
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing agent request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="studio-integration-version/pydantic_mcp_agent.py">
+from dotenv import load_dotenv
+import pathlib
+import logfire
+import os
+
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai import Agent
+
+import mcp_client
+
+load_dotenv()
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+logfire.configure(send_to_logfire='if-token-present')
+
+
+# Get the directory where the current script is located
+SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
+# Define the path to the config file relative to the script directory
+CONFIG_FILE = SCRIPT_DIR / "mcp_config.json"
+
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+
+    return OpenAIModel(
+        llm,
+        base_url=base_url,
+        api_key=api_key
+    )
+
+async def get_pydantic_ai_agent():
+    client = mcp_client.MCPClient()
+    client.load_servers(str(CONFIG_FILE))
+    tools = await client.start()
+    return Agent(model=get_model(), tools=tools)
+</file>
+
+<file path=".env.example">
+# Options supported are:
+# 1. OpenAI
+# 2. OpenRouter
+# 3. Ollama
+PROVIDER=
+
+# Base URL for the OpenAI instance (default is https://api.openai.com/v1)
+# OpenAI: https://api.openai.com/v1
+# Ollama (example): http://localhost:11434/v1
+# OpenRouter: https://openrouter.ai/api/v1
+BASE_URL=
+
+# OpenAI: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# Open Router: Get your API Key here after registering: https://openrouter.ai/keys
+# Ollama: No need to set this unless you specifically configured an API key
+LLM_API_KEY=
+
+# The LLM you want to use for the agents. Make sure this LLM supports tools (especially important if using Ollama)!
+# OpenAI example: gpt-4o-mini
+# OpenRouter example: anthropic/claude-3.7-sonnet
+# Ollama example: qwen2.5:14b-instruct-8k
+MODEL_CHOICE=
+</file>
+
+<file path=".gitignore">
+.env
+mcp_config.json
+</file>
+
+<file path="mcp_client.py">
+from pydantic_ai import RunContext, Tool as PydanticTool
+from pydantic_ai.tools import ToolDefinition
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.types import Tool as MCPTool
+from contextlib import AsyncExitStack
+from typing import Any, List
+import asyncio
+import logging
+import shutil
+import json
+import os
+
+logging.basicConfig(
+    level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+class MCPClient:
+    """Manages connections to one or more MCP servers based on mcp_config.json"""
+
+    def __init__(self) -> None:
+        self.servers: List[MCPServer] = []
+        self.config: dict[str, Any] = {}
+        self.tools: List[Any] = []
+        self.exit_stack = AsyncExitStack()
+
+    def load_servers(self, config_path: str) -> None:
+        """Load server configuration from a JSON file (typically mcp_config.json)
+        and creates an instance of each server (no active connection until 'start' though).
+
+        Args:
+            config_path: Path to the JSON configuration file.
+        """
+        with open(config_path, "r") as config_file:
+            self.config = json.load(config_file)
+
+        self.servers = [MCPServer(name, config) for name, config in self.config["mcpServers"].items()]
+
+    async def start(self) -> List[PydanticTool]:
+        """Starts each MCP server and returns the tools for each server formatted for Pydantic AI."""
+        self.tools = []
+        for server in self.servers:
+            try:
+                await server.initialize()
+                tools = await server.create_pydantic_ai_tools()
+                self.tools += tools
+            except Exception as e:
+                logging.error(f"Failed to initialize server: {e}")
+                await self.cleanup_servers()
+                return []
+
+        return self.tools
+
+    async def cleanup_servers(self) -> None:
+        """Clean up all servers properly."""
+        for server in self.servers:
+            try:
+                await server.cleanup()
+            except Exception as e:
+                logging.warning(f"Warning during cleanup of server {server.name}: {e}")
+
+    async def cleanup(self) -> None:
+        """Clean up all resources including the exit stack."""
+        try:
+            # First clean up all servers
+            await self.cleanup_servers()
+            # Then close the exit stack
+            await self.exit_stack.aclose()
+        except Exception as e:
+            logging.warning(f"Warning during final cleanup: {e}")
+
+
+class MCPServer:
+    """Manages MCP server connections and tool execution."""
+
+    def __init__(self, name: str, config: dict[str, Any]) -> None:
+        self.name: str = name
+        self.config: dict[str, Any] = config
+        self.stdio_context: Any | None = None
+        self.session: ClientSession | None = None
+        self._cleanup_lock: asyncio.Lock = asyncio.Lock()
+        self.exit_stack: AsyncExitStack = AsyncExitStack()
+
+    async def initialize(self) -> None:
+        """Initialize the server connection."""
+        command = (
+            shutil.which("npx")
+            if self.config["command"] == "npx"
+            else self.config["command"]
+        )
+        if command is None:
+            raise ValueError("The command must be a valid string and cannot be None.")
+
+        server_params = StdioServerParameters(
+            command=command,
+            args=self.config["args"],
+            env=self.config["env"]
+            if self.config.get("env")
+            else None,
+        )
+        try:
+            stdio_transport = await self.exit_stack.enter_async_context(
+                stdio_client(server_params)
+            )
+            read, write = stdio_transport
+            session = await self.exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            await session.initialize()
+            self.session = session
+        except Exception as e:
+            logging.error(f"Error initializing server {self.name}: {e}")
+            await self.cleanup()
+            raise
+
+    async def create_pydantic_ai_tools(self) -> List[PydanticTool]:
+        """Convert MCP tools to pydantic_ai Tools."""
+        tools = (await self.session.list_tools()).tools
+        return [self.create_tool_instance(tool) for tool in tools]            
+
+    def create_tool_instance(self, tool: MCPTool) -> PydanticTool:
+        """Initialize a Pydantic AI Tool from an MCP Tool."""
+        async def execute_tool(**kwargs: Any) -> Any:
+            return await self.session.call_tool(tool.name, arguments=kwargs)
+
+        async def prepare_tool(ctx: RunContext, tool_def: ToolDefinition) -> ToolDefinition | None:
+            tool_def.parameters_json_schema = tool.inputSchema
+            return tool_def
+        
+        return PydanticTool(
+            execute_tool,
+            name=tool.name,
+            description=tool.description or "",
+            takes_ctx=False,
+            prepare=prepare_tool
+        )
+
+    async def cleanup(self) -> None:
+        """Clean up server resources."""
+        async with self._cleanup_lock:
+            try:
+                await self.exit_stack.aclose()
+                self.session = None
+                self.stdio_context = None
+            except Exception as e:
+                logging.error(f"Error during cleanup of server {self.name}: {e}")
+</file>
+
+<file path="mcp_config_example.json">
+{
+    "mcpServers": {
+        "filesystem": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-filesystem",
+              "C:\\Users\\colem\\oTTomator\\ottomator-agents\\pydantic-ai-mcp-agent"
+            ]
+        },
+        "sqlite": {
+            "command": "docker",
+            "args": [
+                "run",
+                "--rm",
+                "-i",
+                "-v",
+                "./data:/mcp",
+                "mcp/sqlite",
+                "--db-path",
+                "/mcp/test.db"
+            ]
+        }  
+    } 
+}
+</file>
+
+<file path="pydantic_mcp_agent.py">
+from rich.markdown import Markdown
+from rich.console import Console
+from rich.live import Live
+from dotenv import load_dotenv
+import asyncio
+import pathlib
+import sys
+import os
+
+from pydantic_ai import Agent
+from openai import AsyncOpenAI, OpenAI
+from pydantic_ai.models.openai import OpenAIModel
+
+import mcp_client
+
+# Get the directory where the current script is located
+SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
+# Define the path to the config file relative to the script directory
+CONFIG_FILE = SCRIPT_DIR / "mcp_config.json"
+
+load_dotenv()
+
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+
+    return OpenAIModel(
+        llm,
+        base_url=base_url,
+        api_key=api_key
+    )
+
+async def get_pydantic_ai_agent():
+    client = mcp_client.MCPClient()
+    client.load_servers(str(CONFIG_FILE))
+    tools = await client.start()
+    return client, Agent(model=get_model(), tools=tools)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~ Main Function with CLI Chat ~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async def main():
+    print("=== Pydantic AI MCP CLI Chat ===")
+    print("Type 'exit' to quit the chat")
+    
+    # Initialize the agent and message history
+    mcp_client, mcp_agent = await get_pydantic_ai_agent()
+    console = Console()
+    messages = []
+    
+    try:
+        while True:
+            # Get user input
+            user_input = input("\n[You] ")
+            
+            # Check if user wants to exit
+            if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
+                print("Goodbye!")
+                break
+            
+            try:
+                # Process the user input and output the response
+                print("\n[Assistant]")
+                with Live('', console=console, vertical_overflow='visible') as live:
+                    async with mcp_agent.run_stream(
+                        user_input, message_history=messages
+                    ) as result:
+                        curr_message = ""
+                        async for message in result.stream_text(delta=True):
+                            curr_message += message
+                            live.update(Markdown(curr_message))
+                    
+                    # Add the new messages to the chat history
+                    messages.extend(result.all_messages())
+                
+            except Exception as e:
+                print(f"\n[Error] An error occurred: {str(e)}")
+    finally:
+        # Ensure proper cleanup of MCP client resources when exiting
+        await mcp_client.cleanup()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="README.md">
+# Pydantic AI MCP Agent - Tool Integration Framework
+
+This project demonstrates how to build an AI agent that integrates with Model Context Protocol (MCP) servers, allowing AI models to access external tools through a standardized interface. It uses Pydantic AI for the agent framework and MCP for tool integration, and the MCP configuration is similar to Claude Desktop/Windsurf/Cline.
+
+## Quick Start
+
+If you want to very quickly integrate MCP servers into your own Pydantic AI agents, just follow these simple steps:
+
+1. Copy `mcp_client.py` from this repo into your own project
+
+2. Install the necessary dependencies:
+
+```bash
+pip install pydantic-ai mcp
+```
+
+3. Set up an `mcp_config.json` file in your project which follows the **exact** same structure as configuring MCP servers for Claude Desktop. Use `mcp_config_example.json` for guidance.
+
+4. Set up your Pydantic AI agent like:
+
+```python
+import mcp_client
+from pydantic_ai import Agent
+
+async def get_pydantic_ai_agent():
+    client = mcp_client.MCPClient()
+    client.load_servers("mcp_config.json")
+    tools = await client.start()
+    return client, Agent(model='your-llm-here', tools=tools)
+```
+
+Then you in your main function you can retrieve the client and agent like:
+
+```python
+client, agent = await get_pydantic_ai_agent()
+```
+
+This Pydantic AI agent will now have access to all the tools for the MCP servers you defined in `mcp_config.json`!
+
+## Features
+
+- **🔧 MCP Tool Integration**: Connect to any MCP-compatible tool server
+- **🤖 Pydantic AI Framework**: Leverage the powerful Pydantic AI agent capabilities
+- **🔄 Dynamic Tool Discovery**: Automatically convert MCP tools to Pydantic AI tools
+- **💬 Interactive CLI**: Simple command-line interface for testing
+- **📊 Conversation History**: Store and retrieve conversation history with Supabase
+- **🌐 API Endpoint**: FastAPI integration example in `/studio-integration-version` (for Live Agent Studio deployment)
+
+## Project Structure
+
+This repository contains two main implementations:
+
+1. **CLI Implementation** (root directory):
+   - `pydantic_mcp_agent.py`: Main CLI application with interactive chat
+   - `mcp_client.py`: Client for connecting to MCP servers
+   - `mcp_config.json`: Configuration for MCP servers
+
+2. **Live Agent Studio Integration** (`studio-integration-version/`):
+   - `pydantic_mcp_agent_endpoint.py`: FastAPI endpoint for Live Agent Studio
+   - `pydantic_mcp_agent.py`: Simplified agent setup for API integration
+   - `mcp_client.py`: Client for connecting to MCP servers
+   - `Dockerfile`: Container configuration for deployment
+
+## How It Works
+
+### MCP Integration Architecture
+
+The system works by:
+
+1. **Configuration**: Define MCP servers in `mcp_config.json`
+2. **Connection**: Establish connections to MCP servers via stdio
+3. **Tool Discovery**: Retrieve available tools from MCP servers
+4. **Tool Conversion**: Transform MCP tools into Pydantic AI compatible tools
+5. **Agent Initialization**: Create a Pydantic AI agent with the converted tools
+6. **Execution**: Run the agent with user input, allowing it to call MCP tools
+
+### Key Components
+
+- **MCPClient**: Manages connections to one or more MCP servers
+- **MCPServer**: Handles communication with a specific MCP server
+- **Tool Conversion**: Transforms MCP tools to Pydantic AI compatible tools
+- **Agent**: Pydantic AI agent that processes user requests and uses tools
+
+## Prerequisites
+
+- Python 3.9+
+- Node.js (for MCP servers)
+- OpenAI API key (or compatible API like OpenRouter, can use Ollama without an API key too)
+
+## Setup Instructions
+
+1. **Create and activate a virtual environment**:
+   ```bash
+   # On Windows
+   python -m venv venv
+   venv\Scripts\activate
+
+   # On macOS/Linux
+   python -m venv venv
+   source venv/bin/activate
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment variables**:
+   Copy the `.env.example` file to `.env` and fill in your API keys:
+   - `PROVIDER`: LLM provider (OpenAI, OpenRouter, or Ollama)
+   - `BASE_URL`: API base URL for your LLM provider
+   - `LLM_API_KEY`: Your API key for the LLM provider
+   - `MODEL_CHOICE`: The LLM model to use (e.g., gpt-4o-mini)
+
+4. **Configure MCP servers**:
+   Create or modify `mcp_config.json` (use `mcp_config_example.json` as an example) to define your MCP servers. Example:
+   ```json
+   {
+     "mcpServers": {
+       "serverName": {
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-filesystem", "./"],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+5. **Run the CLI application**:
+   ```bash
+   python pydantic_mcp_agent.py
+   ```
+
+## How to Extend
+
+You can extend this project by:
+
+1. **Adding more MCP servers**: Modify `mcp_config.json` to include additional servers
+2. **Creating custom tools**: Develop your own MCP servers
+3. **Enhancing the agent**: Modify the agent configuration for specialized use cases
+4. **Adding memory capabilities**: Integrate with memory systems like Mem0   
+
+## Live Agent Studio Integration
+
+The `studio-integration-version` folder contains everything needed to deploy this agent to the Live Agent Studio:
+
+1. **Set up environment variables**:
+   Copy `.env.example` to `.env` in the `studio-integration-version` directory and add:
+   - LLM configuration (same as CLI version)
+   - `SUPABASE_URL`: Your Supabase project URL
+   - `SUPABASE_SERVICE_KEY`: Your Supabase service role key
+   - `API_BEARER_TOKEN`: Secret token for API authentication
+
+2. **Run the API server**:
+   ```bash
+   cd studio-integration-version
+   python pydantic_mcp_agent_endpoint.py
+   ```
+
+3. **Deploy with Docker**:
+   ```bash
+   cd studio-integration-version
+   docker build -t pydantic-mcp-agent .
+   docker run -p 8001:8001 --env-file .env pydantic-mcp-agent
+   ```
+
+## Supabase Setup
+
+For the Live Agent Studio integration:
+
+1. Create a Supabase account and project at [supabase.com](https://supabase.com)
+2. Create a `messages` table with the following schema:
+   - `id`: UUID (primary key)
+   - `created_at`: Timestamp with time zone
+   - `session_id`: Text
+   - `message`: JSON (contains `type`, `content`, and optional `data`)
+
+## Learn More
+
+- [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol/mcp)
+- [Pydantic AI](https://github.com/pydantic/pydantic-ai)
+- [Supabase](https://supabase.com/docs)
+- [FastAPI](https://fastapi.tiangolo.com/)
+</file>
+
+</files>

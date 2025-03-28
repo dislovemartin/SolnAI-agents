@@ -1,0 +1,1253 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+ui/
+  example_page.tsx
+  package.json
+  reddit_result.tsx
+  tool_results.tsx
+.dockerignore
+.env.example
+.gitignore
+agent_endpoint.py
+ai_agent.py
+Dockerfile
+README.md
+requirements.txt
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="ui/example_page.tsx">
+import React from 'react';
+import { RedditResultsGrid } from '../../components/RedditResultsGrid';
+import { ToolResultsExpander } from '../../components/ToolResultsExpander';
+
+const dummyData = {
+  tool_results: {
+    call_0tNO9fe3yKtsWQnM5jq406xr: {
+      args: {
+        query: "minecraft",
+      },
+      result: {
+        subreddits: ["Minecraft", "MinecraftMemes", "MinecraftBuddies", "Minecraftbuilds", "teenagers"],
+      },
+      tool_name: "find_subreddits",
+    },
+    call_1xYZ9ab3cDtsWQnM5jq406yz: {
+      args: {
+        city: "New York",
+        date: "2023-05-15",
+      },
+      result: {
+        temperature: 72,
+        conditions: "Partly cloudy",
+        humidity: 65,
+      },
+      tool_name: "get_weather",
+    },
+    call_2ABC3de4fGhiJKlM7nop8qrs: {
+      args: {
+        query: "artificial intelligence",
+      },
+      result: {
+        results: [
+          {
+            title: "The Future of AI: Opportunities and Challenges",
+            subreddit: "artificial",
+            score: 1520,
+            num_comments: 237,
+            selftext: "As AI continues to advance at an unprecedented pace, we find ourselves at a crossroads...",
+            url: "https://www.reddit.com/r/artificial/comments/example1",
+            comments: [
+              {
+                author: "AI_Enthusiast",
+                score: 305,
+                body: "Great post! I think one of the biggest challenges we face is ensuring AI remains ethical and aligned with human values."
+              },
+              {
+                author: "FutureTech",
+                score: 189,
+                body: "The potential applications in healthcare are particularly exciting. Imagine AI systems that can diagnose diseases more accurately than human doctors!"
+              }
+            ]
+          },
+          {
+            title: "How Machine Learning is Revolutionizing Scientific Research",
+            subreddit: "MachineLearning",
+            score: 982,
+            num_comments: 145,
+            selftext: "From particle physics to climate science, machine learning algorithms are accelerating discoveries across various scientific disciplines...",
+            url: "https://www.reddit.com/r/MachineLearning/comments/example2",
+            comments: [
+              {
+                author: "DataScientist123",
+                score: 201,
+                body: "As someone working in the field, I can attest to the massive impact ML is having. It's not just speeding up research, but also uncovering patterns we might have missed otherwise."
+              },
+              {
+                author: "AISkeptic",
+                score: 87,
+                body: "While the potential is undeniable, we should also be cautious about over-relying on ML. It's crucial to maintain human oversight and interpretation of results."
+              }
+            ]
+          }
+        ]
+      },
+      tool_name: "search_reddit",
+    }
+  },
+}
+
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <main className="container mx-auto py-12 px-4">
+        <h1 className="text-4xl font-bold mb-8 text-center">Tool Results Dashboard</h1>
+        <div className="space-y-12">
+          <RedditResultsGrid results={dummyData.tool_results.call_0tNO9fe3yKtsWQnM5jq406xr.result.subreddits} />
+          <ToolResultsExpander toolResults={dummyData.tool_results} />
+        </div>
+      </main>
+    </div>
+  )
+}
+</file>
+
+<file path="ui/package.json">
+{
+    "name": "my-app",
+    "version": "1.0.0",
+    "dependencies": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0",
+      "prism-react-renderer": "^2.0.6"
+    },
+    "scripts": {
+      "start": "react-scripts start",
+      "build": "react-scripts build",
+      "test": "react-scripts test",
+      "eject": "react-scripts eject"
+    }
+  }
+</file>
+
+<file path="ui/reddit_result.tsx">
+import React from 'react';
+import { ArrowBigUp, MessageSquare } from 'lucide-react';
+import Link from 'next/link';
+
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
+
+interface RedditPost {
+  title: string
+  subreddit: string
+  score: number
+  num_comments: number
+  selftext: string
+  url: string
+  comments: {
+    author: string | null
+    score: number
+    body: string
+  }[]
+}
+
+interface ToolResult {
+  args: Record<string, any>
+  result: Record<string, any>
+  tool_name: string
+}
+
+interface RedditResultsGridProps {
+  data: {
+    tool_results: Record<string, ToolResult>
+  }
+}
+
+function RedditPostCard({ post }: { post: RedditPost }) {
+  return (
+    <Card className="h-full flex flex-col">
+      <CardHeader className="p-3">
+        <CardTitle className="text-sm line-clamp-2">
+          <Link href={post.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+            {post.title}
+          </Link>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-3 pt-0 flex-grow flex flex-col justify-between">
+        <div className="flex items-center space-x-2 text-xs text-muted-foreground mb-2">
+          <span className="truncate">r/{post.subreddit}</span>
+          <span className="flex items-center whitespace-nowrap">
+            <ArrowBigUp className="w-3 h-3 mr-1" />
+            {post.score}
+          </span>
+          <span className="flex items-center whitespace-nowrap">
+            <MessageSquare className="w-3 h-3 mr-1" />
+            {post.num_comments}
+          </span>
+        </div>
+        {post.selftext && (
+          <p className="text-xs line-clamp-2">{post.selftext}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function RedditResultsGrid({ data }: RedditResultsGridProps) {
+  // Extract the reddit results from the tool results
+  const redditResults = Object.values(data.tool_results)
+    .filter(tool => tool.tool_name === 'search_reddit')
+    .flatMap(tool => tool.result.posts || []);
+
+  if (redditResults.length === 0) {
+    return <div>No Reddit results found</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-bold mb-4">Reddit Search Results</h2>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {redditResults.map((post: RedditPost, index: number) => (
+          <RedditPostCard key={index} post={post} />
+        ))}
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="ui/tool_results.tsx">
+"use client"
+
+import { useState } from "react"
+import { ChevronDown, ChevronUp } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+// DEPENDS ON SHADCN CARD AND BUTTON, LUCIDE REACT
+
+interface ToolResult {
+  args: Record<string, any>
+  result: Record<string, any>
+  tool_name: string
+}
+
+interface ToolResultsProps {
+  data: {
+    tool_results: Record<string, ToolResult>
+  }
+}
+
+function ToolResultExpander({ toolCall, result }: { toolCall: string; result: ToolResult }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg flex items-center justify-between">
+          <div className="flex items-center">
+            <span className="mr-2">🛠️</span>
+            <span>{result.tool_name}</span>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} aria-label={isExpanded ? "Collapse tool result" : "Expand tool result"}>
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      {isExpanded && (
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium mb-1">Arguments:</h4>
+              <pre className="bg-gray-100 p-3 rounded-md overflow-x-auto text-xs">
+                {JSON.stringify(result.args, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium mb-1">Result:</h4>
+              <pre className="bg-gray-100 p-3 rounded-md overflow-x-auto text-xs">
+                {JSON.stringify(result.result, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
+export default function ToolResultsExpander({ data }: ToolResultsProps) {
+  if (!data.tool_results || Object.keys(data.tool_results).length === 0) {
+    return null
+  }
+
+  return (
+    <div className="space-y-8">
+      <h2 className="text-2xl font-bold mb-4">Detailed Tool Results</h2>
+      {Object.entries(data.tool_results).map(([toolCall, result]) => (
+        <ToolResultExpander key={toolCall} toolCall={toolCall} result={result} />
+      ))}
+    </div>
+  )
+}
+</file>
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".env.example">
+# For the Supabase version (sample_supabase_agent.py), set your Supabase URL and Service Key.
+# Get your SUPABASE_URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY= 
+
+# For the Postgres version (sample_postgres_agent.py), set your database connection URL.
+# Format: postgresql://[user]:[password]@[host]:[port]/[database_name]
+# Example: postgresql://postgres:mypassword@localhost:5432/mydb
+# For Supabase Postgres connection, you can find this in Database settings -> Connection string -> URI
+DATABASE_URL=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+
+
+OPENAI_API_KEY=
+
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+
+# Get your Brave API key by going to the following link after signing up for Brave:
+# https://api.search.brave.com/app/keys
+BRAVE_API_KEY=
+</file>
+
+<file path=".gitignore">
+.env
+_pycache_/
+</file>
+
+<file path="agent_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
+import os
+import httpx
+import json
+from ai_agent import ai_agent, Deps
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart,
+    ToolReturnPart)
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/ask-reddit-agent", response_model=AgentResponse)
+async def sample_supabase_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history from the DB
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        # This will be different depending on your framework (Pydantic AI, LangChain, etc.)
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=msg_content)])
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        # Initialize agent dependencies
+        async with httpx.AsyncClient() as client:
+            deps = Deps(
+                client=client,
+                reddit_client_id=os.getenv("REDDIT_CLIENT_ID", None),
+                reddit_client_secret=os.getenv("REDDIT_CLIENT_SECRET", None),
+                brave_api_key=os.getenv("BRAVE_API_KEY", None),
+            )
+
+            """
+            This is where you insert the custom logic to get the response from your agent.
+            Your agent can also insert more records into the database to communicate
+            actions/status as it is handling the user's question/request.
+            Additionally:
+                - Use the 'messages' array defined about for the chat history. This won't include the latest message from the user.
+                - Use request.query for the user's prompt.
+                - Use request.session_id if you need to insert more messages into the DB in the agent logic.
+            """
+            # Run the agent with conversation history
+            result = await ai_agent.run(
+                "use Reddit to answer this query: " + request.query,
+                message_history=messages,
+                deps=deps
+            )
+
+            tool_results = {}
+
+            for msg in result._all_messages:
+                for part in msg.parts:
+                    if part.part_kind == "tool-return":
+                        tool_call_id = part.tool_call_id
+                        tool_results[tool_call_id] = {
+                            **tool_results.get(tool_call_id, {}),  # Preserve existing 'args'
+                            'result': part.content,
+                        }
+                    elif part.part_kind == "tool-call":
+                        tool_call_id = part.tool_call_id
+                        tool_results[tool_call_id] = {
+                            'args': json.loads(part.args.args_json),
+                            'tool_name': part.tool_name,
+                            **tool_results.get(tool_call_id, {}),  # Preserve existing 'result'
+                        }
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=result.data,
+            data={"tool_results": tool_results} # TODO add the data from the tool call
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="ai_agent.py">
+from __future__ import annotations as _annotations
+
+import asyncpraw
+import asyncio
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict
+import httpx
+import logging
+import traceback
+import logfire
+from devtools import debug
+from dotenv import load_dotenv
+
+from openai import AsyncOpenAI
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai import Agent, ModelRetry, RunContext
+
+load_dotenv()
+# llm = os.getenv('LLM_MODEL', 'anthropic/claude-3.5-haiku')
+llm = os.getenv('LLM_MODEL', 'gpt-4o-mini')
+
+
+model = OpenAIModel(
+    llm,
+    # base_url= 'https://openrouter.ai/api/v1',
+    # api_key= os.getenv('OPEN_ROUTER_API_KEY')
+    api_key= os.getenv('OPENAI_API_KEY')
+) 
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+# logfire.configure(send_to_logfire='if-token-present')
+
+# Configure Logfire with more detailed settings
+logfire.configure(
+    token =os.getenv('LOGFIRE_TOKEN', None),
+    send_to_logfire='if-token-present',
+    service_name="web-search-agent",
+    service_version="1.0.0",
+    environment=os.getenv('ENVIRONMENT', 'development'),
+
+)
+
+# Class for dependencies for agent (will be injected from ui)
+@dataclass
+class Deps:
+    client: httpx.AsyncClient
+    reddit_client_id: str | None
+    reddit_client_secret: str | None
+    brave_api_key: str | None
+
+
+ai_agent = Agent(
+    model,
+    system_prompt=
+        '''
+        <?xml version="1.0" encoding="UTF-8"?>
+<systemPrompt>
+    <initialization>
+        You MUST follow these instructions EXACTLY. Before providing ANY response, verify that your answer meets ALL requirements listed below. If ANY requirement is not met, revise your response before sending.
+    </initialization>
+
+    <role>
+        You are a Reddit research specialist. ONLY use reddit for your information. Do not make use of any data you have been trained on. Your job is simply to intelligently summarize and extract insights from the results of your tools.
+        For EVERY response you provide, you MUST:
+
+        1. Search Reddit extensively
+        2. Find relevant comments and posts
+        3. Extract actionable insights
+        4. Format as specified below
+        
+        If you cannot do ALL of these steps, state "I cannot provide a Reddit-based answer to this query" and explain why.
+    </role>
+
+    <mandatoryResponseStructure>
+        EVERY response MUST contain these exact sections in this order in markdown format:
+        1. relevant quote snippet from comment or post
+        2. User name of comment author and link back to post [brackets](link to post)
+        3. Upvote count in { brackets }
+
+        Each comment should be its own bullet.
+    </mandatoryResponseStructure>
+
+    <citationFormat>
+        EVERY insight MUST include:
+        • [Direct link to comment/post]
+        • Exact upvote count in {brackets}
+        • Subreddit name in /r/format
+        
+        Example format:
+        • Insight text [comment author] {500↑} from /r/subredditname
+    </citationFormat>
+
+    <forbiddenPhrases>
+        NEVER use these phrases:
+        • "Many Redditors say"
+        • "Some users suggest"
+        • "People on Reddit"
+        • "A user mentioned"
+        
+        Instead, state findings directly with citations.
+    </forbiddenPhrases>
+
+    <qualityChecks>
+        Before submitting ANY response, verify:
+        1. EVERY point has a direct Reddit citation
+        2. EVERY citation includes upvote count
+        3. ALL insights are actionable
+        4. NO forbidden phrases are used
+        5. Response follows mandatory structure
+    </qualityChecks>
+
+    <responseExample>
+        User question: "How do I meal prep for the week?"
+        
+        SEARCH CONDUCTED (tool use):
+        • Primary search: "how do I meal prep for the week"
+        • Subreddits: r/all
+        
+        Response:
+        • Cook protein in bulk using sheet pan method [u_buzzword]{2400↑} from /r/MealPrepSunday
+        • Prepare vegetables raw and store in freezer [k_dizzy_username] {1800↑} from /r/EatCheapAndHealthy
+        • Don't drink your calories. Make sure your meals include protein and vegetables to fill you up. [RintheLost] {205↑} from /r/EatCheapAndHealthy
+        
+    </responseExample>
+
+     <responseExample>
+        User question: "Can I take melatonin every night?"
+        
+        SEARCH CONDUCTED (tool use):
+        • Primary search: "can I take melatonin every night"
+        • Subreddits: r/all
+        
+        Repsonse:
+        • Melatonin is safe for short-term use but you should ge tchecked for underlying conditions. In general melatonin is pretty mild and it can be used as a part of a long term regimen to treat sleep disorders. [CloudSill]{161↑} from /r/AskDocs
+        • Half life is short and it's definitely not addictive, nor does one develop tolerance. [Nheea]{17↑} from /r/AskDocs
+        • NAD, recently saw an LPT that explained a smaller dose (1-3mg) of melatonin is much more effective than a larger (5-10mg) dose. Something to consider. [franlol]{189↑} from /r/AskDocs
+    </responseExample>
+
+    <enforcementMechanism>
+        If ANY response does not follow this EXACT format:
+        1. Stop immediately
+        2. Delete the draft response
+        3. Start over following ALL requirements
+        
+        NO EXCEPTIONS to these rules are permitted.
+    </enforcementMechanism>
+</systemPrompt>
+        ''',
+    deps_type=Deps,
+    retries=0 ## TODO CHANGE THIS TO 2
+)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@ai_agent.tool
+async def search_reddit(ctx: RunContext[Deps], query: str) -> Dict[str, Any]:
+    """
+    Search Reddit with a given query and return results as a dictionary.
+
+    Args:
+        ctx: The context containing dependencies such as Reddit credentials.
+        query: The search query.
+    Returns:
+        A dictionary containing the search results with relevant posts and their comments.
+    """
+    logger.info(f"Starting Reddit search with query: {query}")
+    
+    # Check Brave API key
+    if ctx.deps.brave_api_key is None:
+        logger.warning("No Brave API key provided - returning test results")
+        return {"results": [], "error": "Please provide a Brave API key to get real search results"}
+
+    headers = {
+        'X-Subscription-Token': ctx.deps.brave_api_key,
+        'Accept': 'application/json',
+    }
+    
+    try:
+        # Search using Brave API
+        logger.info("Calling Brave search API")
+        # Modified this part to use the client directly without context manager
+        r = await ctx.deps.client.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            params={
+                'q': query + "reddit",  # Better filtering for Reddit-specific results
+                'count': 3,
+                'text_decorations': True,
+                'search_lang': 'en'
+            },
+            headers=headers
+        )
+        data = r.json()
+        logger.info(f"Received {len(data.get('web', {}).get('results', []))} results from Brave")
+        
+        # Extract Reddit URLs
+        reddit_urls = [
+            item.get('url') 
+            for item in data.get('web', {}).get('results', [])
+            if item.get('url', '').startswith('https://www.reddit.com/r/')
+        ]
+        
+        if not reddit_urls:
+            logger.warning("No valid Reddit URLs found in search results")
+            return {"results": [], "error": "No relevant Reddit posts found"}
+
+        # Initialize Reddit client
+        logger.info("Initializing Reddit client")
+        reddit = asyncpraw.Reddit(
+            client_id=ctx.deps.reddit_client_id,
+            client_secret=ctx.deps.reddit_client_secret,
+            user_agent='A search method for Reddit to surface the most relevant posts'
+        )
+
+        result_data = []
+        for url in reddit_urls:
+            try:
+                logger.info(f"Processing Reddit post: {url}")
+                submission = await reddit.submission(url=url)
+                        
+                # Sort and process comments
+                comments = sorted(
+                            submission.comments.list(),  # Flatten the comment tree
+                            key=lambda comment: comment.score if isinstance(comment, asyncpraw.models.Comment) else 0,
+                            reverse=True
+                )  # sort comments to get the top upvoted comments            
+                processed_comments = []
+                
+                for comment in comments[:8]:  # Limit to top 8 comments
+                    if not isinstance(comment, asyncpraw.models.Comment) or comment.body == "[removed]" or comment.body == "[deleted]":
+                        continue
+                        
+                    try:
+                        author_name = comment.author.name if comment.author else "[deleted]"
+                        processed_comments.append({
+                            "author": author_name,
+                            "score": comment.score,
+                            "body": comment.body[:1800]  # Limit comment length
+                        })
+                    except AttributeError as e:
+                        logger.error(f"Error processing comment: {e}")
+                        continue
+
+                # Add post data
+                result_data.append({
+                    "title": submission.title,
+                    "subreddit": str(submission.subreddit),
+                    "score": submission.score,
+                    "num_comments": submission.num_comments,
+                    "selftext": submission.selftext[:2000],  # Limit selftext length
+                    "url": submission.url,
+                    "comments": processed_comments
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing submission {url}: {e}")
+                continue
+
+        logger.info(f"Successfully processed {len(result_data)} Reddit posts")
+        await reddit.close()
+        return {"results": result_data}
+
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
+        return {"results": [], "error": f"Unexpected error: {str(e)}"}
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
+COPY . .
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+# Feel free to change sample_supabase_agent to sample_postgres_agent
+CMD ["sh", "-c", "uvicorn agent_endpoint:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="README.md">
+<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+<a id="readme-top"></a>
+
+# r/askAgent
+
+Author: [Kai Feinberg](kaifeinberg.dev)
+
+<!-- ABOUT THE PROJECT -->
+With more AI generated content every day it has become harder to find reliable information. Many people have turned to Reddit as the last source of human truth. This agent speeds up your research process by identifying relevant reddit posts and extracting insights from the post and comments. This is an easy way to integrate reddit results into your agents and can be combined with youtube search, twitter search, or other apis in order to automate consumer research.
+
+![Reddit Agent Demo](public/reddit_agent_demo.gif)
+
+
+## What can this agent do?
+
+* Find the best restaurants in Chicago?
+* What are the best sci-fi movies?
+* Find alternatives to Google Slides?
+* What are the best dark academia books?
+* Compare housing in SF vs NYC
+* Find up and coming indie artists
+* What are the best AI code tools for front end?
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+## Custom UI for tool calls
+
+See the arguments and results from tool calls as well as a custom card for each post fetched by the `search_reddit` tool.
+
+![Reddit ui components](public/reddit_ui_components.gif)
+
+* note that the ui folder is not an app itself just a collection of react components that can be pasted elsewhere
+
+## How does it work
+
+The search process takes place in the `search_reddit` function in the `ai_agent.py` file. It takes in a query which it uses to search the web. It then parse the top links (if the are reddit posts) and extracts the post data and the data from the top (most upvoted) comments.
+
+![How it works](public/how_it_works.png)
+
+
+*Its worth noting that you can search Reddit via their api or via PRAW. However, it tends to give results that are much less consistent and will often include long posts from subreddits like relationship advice. I think using the Brave search api is a great pattern for integrating search without having to interact with another api. For example you could append "youtube" to the end of a query and get urls of youtube videos all without actual credentials to youtube's api.
+
+
+## How is this better than Reddit Answers (currently in beta)
+
+* you can combine this with other agents to genenerate reports or complete tasks
+* upvotes count is present in the response so you can gauge the authority of a comment
+* has chat history so you can find/continue/share your old conversations
+* not limited to the US
+
+
+## Tech Stack
+
+### APIs/integrations
+* [Brave Search API](https://brave.com/search/api/)
+* [Reddit](https://www.reddit.com/dev/api/) 
+* [OpenAI](https://platform.openai.com/docs/overview)
+
+### Libraries used:
+
+* [Pydantic ai](https://github.com/pydantic/pydantic-ai) - to create ai agent with tools
+* [Async PRAW](https://asyncpraw.readthedocs.io/en/stable/index.html) - to interact with Reddit's api
+* FastAPI - to quickly spin up/host an api
+
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- GETTING STARTED -->
+## Getting Started
+
+Note that this doesn't contain code for a full frontend you can interact with. Check out [this repo](https://github.com/kai-feinberg/reddit-agent) if you want a full streamlit interface for your agent.
+
+Edit/add to the ai agent's tools in `ai_agent.py`. If you introduce a new dependency make sure to add it to the context as well in the endpoint file. Highly recommend this video for a more in depth guide: [https://youtu.be/zf_D2Eafvk0?si=Uv0pxXXdEVjDvC6K](https://youtu.be/zf_D2Eafvk0?si=Uv0pxXXdEVjDvC6K)
+
+
+### Installation
+
+_Below is an example of how you can instruct your audience on installing and setting up your app. This template doesn't rely on any external dependencies or services._
+
+1. Get API Keys for Brave and Reddit (instructions in `.env.example`)
+2. Rename `.env.example` to `.env` and add these keys and your open ai api key
+3. install the requirements (it is recommended to use a vitual environment such as venv)
+```sh
+   pip install -r requirements.txt
+```
+4. run the endpoint
+```sh 
+python ./agent_endpoint.py
+```
+5. I recommend using agent 0 to interact with your agent. Follow this guide to get it set up. [https://www.youtube.com/watch?v=7XZbI_ez8_U](https://www.youtube.com/watch?v=7XZbI_ez8_U)
+
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Custom UI (for a react front end)
+When a response is generated with will store a message with this schema
+
+```json
+{
+  "type": "ai",
+  "content": "Agent's response text",
+  "data": {
+    "...additional info for the frontend..."
+  }
+}
+```
+
+I have modified the endpoint to store the data from tool usage with the following schema in the data field. Args is the arguments used when calling the tool.
+Result is the data returned from the tool. Each tool is given a name such as `search_reddit` or `get_weather`. Each tool call is given a unique identifier.
+
+```json
+   "tool_results": {
+      "TOOL_CALL_IDENTIFIER": {
+         "args": {
+            "TOOL_ARGUMENTS": "DATA"
+         },
+         "result": {
+            "TOOL_DATA": "DATA"
+         },
+         "tool_name": "MY_TOOL"
+      },
+      call___XXXXX {..}
+   }
+```
+
+<!-- Start of Selection -->
+<details>
+  <summary>CLICK FOR EXAMPLE DATA</summary>
+
+  ```json
+  "tool_results": {
+      "call_0tNO9fe3yKtsWQnM5jq406xr": {
+        "args": {
+          "query": "minecraft"
+        },
+        "result": {
+          "subreddits": ["Minecraft", "MinecraftMemes", "MinecraftBuddies", "Minecraftbuilds", "teenagers"]
+        },
+        "tool_name": "find_subreddits"
+      },
+      "call_1xYZ9ab3cDtsWQnM5jq406yz": {
+        "args": {
+          "city": "New York",
+          "date": "2023-05-15"
+        },
+        "result": {
+          "temperature": 72,
+          "conditions": "Partly cloudy",
+          "humidity": 65
+        },
+        "tool_name": "get_weather"
+      }
+  }
+  ```
+
+</details>
+
+
+There are two react components in the `/ui` folder making use of this tool data.
+
+`tool_results.tsx` takes any message and renders the tools used and each tools arguments and returned content
+
+`reddit_result.tsx` renders cards for any reddit posts that were fetched with the search reddit tool.
+
+I created these using v0 and you can see the chat here: [https://v0.dev/chat/tool-results-expander-D78mKUcHhDM](https://v0.dev/chat/tool-results-expander-D78mKUcHhDM)
+
+Here is an example of how the components look
+![Reddit ui components](public/reddit_ui_components.gif)
+
+
+<!-- ACKNOWLEDGMENTS -->
+## Acknowledgments
+
+Absolutely enormous shoutout to Cole Medin for putting on this hackathon and providing the resources/help to make some really cool agents.
+
+Here's his template for creating agents with python, pydantic, and supabase.
+
+[https://github.com/coleam00/SolnAI-agents/blob/main/~sample-python-agent~/sample_supabase_agent.py](https://github.com/coleam00/SolnAI-agents/blob/main/~sample-python-agent~/sample_supabase_agent.py)
+
+Here is his super helpful developer guide:
+[https://studio.ottomator.ai/guide](https://studio.ottomator.ai/guide)
+
+Cole also has countless videos on his channel that are super handy for building ai agents both with pydantic and no code/low code tools:
+[Cole's youtube channel](https://www.youtube.com/@ColeMedin)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- LICENSE -->
+## License
+
+Distributed under the MIT License. Feel free to clone it, distribute it, and do whatever. Pls credit me/hire me I'm just a poor college student lmao
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- CONTACT -->
+## Contact
+
+Kai Feinberg - [kaifeinberg.dev](https://www.kaifeinberg.dev/)
+
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+aiohappyeyeballs==2.4.4
+aiohttp==3.11.11
+aiosignal==1.3.2
+altair==5.5.0
+annotated-types==0.7.0
+anthropic==0.42.0
+anyio==4.7.0
+asgiref==3.8.1
+asttokens==2.4.1
+attrs==24.3.0
+backoff==2.2.1
+bcrypt==4.2.1
+blinker==1.9.0
+build==1.2.2.post1
+cachetools==5.5.0
+certifi==2024.12.14
+charset-normalizer==3.4.0
+click==8.1.7
+colorama==0.4.6
+coloredlogs==15.0.1
+dataclasses-json==0.6.7
+Deprecated==1.2.15
+deprecation==2.1.0
+devtools==0.12.2
+distro==1.9.0
+durationpy==0.9
+eval_type_backport==0.2.0
+executing==2.1.0
+fastapi==0.115.6
+filelock==3.16.1
+flatbuffers==24.3.25
+frozenlist==1.5.0
+fsspec==2024.10.0
+gitdb==4.0.11
+GitPython==3.1.43
+google-auth==2.37.0
+googleapis-common-protos==1.66.0
+gotrue==2.11.1
+greenlet==3.1.1
+griffe==1.5.1
+groq==0.13.1
+grpcio==1.68.1
+h11==0.14.0
+h2==4.1.0
+hpack==4.0.0
+httpcore==1.0.7
+httptools==0.6.4
+httpx==0.27.2
+httpx-sse==0.4.0
+huggingface-hub==0.27.0
+humanfriendly==10.0
+hyperframe==6.0.1
+idna==3.10
+importlib_metadata==8.5.0
+importlib_resources==6.4.5
+Jinja2==3.1.4
+jiter==0.8.2
+json_repair==0.32.0
+jsonpatch==1.33
+jsonpath-python==1.0.6
+jsonpointer==3.0.0
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+kubernetes==31.0.0
+langsmith==0.2.4
+logfire==2.8.0
+logfire-api==2.8.0
+markdown-it-py==3.0.0
+MarkupSafe==3.0.2
+marshmallow==3.23.2
+mdurl==0.1.2
+mistralai==1.2.5
+mmh3==5.0.1
+monotonic==1.6
+mpmath==1.3.0
+multidict==6.1.0
+mypy-extensions==1.0.0
+narwhals==1.18.4
+numpy==2.2.0
+oauthlib==3.2.2
+onnxruntime==1.20.1
+openai==1.58.1
+opentelemetry-api==1.29.0
+opentelemetry-exporter-otlp-proto-common==1.29.0
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
+opentelemetry-exporter-otlp-proto-http==1.29.0
+opentelemetry-instrumentation==0.50b0
+opentelemetry-instrumentation-asgi==0.50b0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-proto==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-semantic-conventions==0.50b0
+opentelemetry-util-http==0.50b0
+orjson==3.10.12
+overrides==7.7.0
+packaging==24.2
+pandas==2.2.3
+pillow==11.0.0
+postgrest==0.19.1
+posthog==3.7.4
+propcache==0.2.1
+protobuf==5.29.2
+pyarrow==18.1.0
+pyasn1==0.6.1
+pyasn1_modules==0.4.1
+pydantic==2.10.4
+pydantic-ai==0.0.13
+pydantic-ai-slim==0.0.13
+pydantic-settings==2.7.0
+pydantic_core==2.27.2
+pydeck==0.9.1
+Pygments==2.18.0
+PyPika==0.48.9
+pyproject_hooks==1.2.0
+pyreadline3==3.5.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytz==2024.2
+PyYAML==6.0.2
+realtime==2.1.0
+referencing==0.35.1
+regex==2024.11.6
+requests==2.32.3
+requests-oauthlib==2.0.0
+requests-toolbelt==1.0.0
+rich==13.9.4
+rpds-py==0.22.3
+rsa==4.9
+shellingham==1.5.4
+six==1.17.0
+smmap==5.0.1
+sniffio==1.3.1
+SQLAlchemy==2.0.36
+starlette==0.41.3
+storage3==0.11.0
+streamlit==1.41.1
+StrEnum==0.4.15
+supabase==2.11.0
+supafunc==0.9.0
+sympy==1.13.3
+tenacity==9.0.0
+tiktoken==0.8.0
+tokenizers==0.20.3
+toml==0.10.2
+tornado==6.4.2
+tqdm==4.67.1
+typer==0.15.1
+typing-inspect==0.9.0
+typing_extensions==4.12.2
+tzdata==2024.2
+urllib3==2.2.3
+uvicorn==0.34.0
+watchdog==6.0.0
+watchfiles==1.0.3
+websocket-client==1.8.0
+websockets==13.1
+wrapt==1.17.0
+yarl==1.18.3
+zipp==3.21.0
+
+asyncpraw==7.8.1 
+asyncprawcore==2.4.0
+</file>
+
+</files>

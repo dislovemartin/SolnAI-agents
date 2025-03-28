@@ -1,0 +1,1228 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.env.example
+ingest-n8n-workflows.py
+N8N_Expert_Agent.json
+README.md
+requirements.txt
+sql_script.sql
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".env.example">
+# Rename this file to .env once you have filled in the below environment variables!
+
+# See all Open AI models you can use here -
+# https://platform.openai.com/docs/models
+# And all Anthropic models you can use here -
+# https://docs.anthropic.com/en/docs/about-claude/models
+# A good default to go with here is gpt-4o or claude-3-5-sonnet-20240620
+LLM_MODEL=gpt-4o
+
+# The OpenAI embedding model to use for vectorizing the n8n workflow summaries.
+# A couple options are text-embedding-3-large and text-embedding-3-small
+# text-embedding-3-small is recommended for most use cases.
+EMBEDDING_MODEL=text-embedding-3-small
+
+# Get your Open AI API Key by following these instructions -
+# https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# You only need this environment variable set if you set LLM_MODEL to a GPT model
+OPENAI_API_KEY=
+
+# Get your Anthropic API Key in your account settings -
+# https://console.anthropic.com/settings/keys
+# You only need this environment variable set if you set LLM_MODEL to a Claude model
+ANTHROPIC_API_KEY=
+
+# Get your SUPABASE URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+</file>
+
+<file path="ingest-n8n-workflows.py">
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_anthropic import ChatAnthropic
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import requests
+import json
+import time
+import os
+
+load_dotenv()
+model = os.getenv('LLM_MODEL', 'gpt-4o')
+embedding_model = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-small')
+supabase_url = os.getenv('SUPABASE_URL')
+supabase_service_secret = os.getenv('SUPABASE_SERVICE_KEY')
+
+# Initialize OpenAI, OpenAI Client for embeddings, and Supabase clients
+llm = ChatOpenAI(model=model) if "gpt" in model.lower() else ChatAnthropic(model=model)
+embeddings = OpenAIEmbeddings(model=embedding_model, dimensions=1536)
+supabase: Client = create_client(supabase_url, supabase_service_secret)
+
+def fetch_workflow(workflow_id):
+    """
+    Retrieves n8n workflow template from their public API.
+
+    Args:
+        workflow_id: Identifier of the workflow template to fetch
+
+    Returns:
+        dict: Workflow template data if found, None if not found or on error
+    """    
+    url = f"https://api.n8n.io/api/templates/workflows/{workflow_id}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    return None
+
+def process_workflow(workflow_data):
+    """
+    Converts n8n workflow data into an HTML component string.
+    
+    Takes raw workflow data, escapes special characters, and wraps in n8n-demo 
+    component tags.
+
+    Args:
+        workflow_data: Dictionary containing workflow template data from n8n API
+
+    Returns:
+        str: HTML component string with escaped workflow data,
+            None if workflow_data is invalid
+
+    Example:
+        "<n8n-demo workflow='{\"nodes\":[...]}></n8n-demo>"
+    """    
+    if workflow_data and 'workflow' in workflow_data and 'workflow' in workflow_data['workflow']:
+        workflow = workflow_data['workflow']['workflow']
+        # Convert the workflow to a JSON string
+        workflow_json = json.dumps(workflow)
+        # Escape single quotes in the JSON string
+        workflow_json_escaped = workflow_json.replace("'", "\\'")
+        # Create the n8n-demo component string
+        return f"<n8n-demo workflow='{workflow_json_escaped}'></n8n-demo>"
+    return None
+
+def check_workflow_legitimacy(workflow_json):
+    """
+    Uses LLM to assess if an n8n workflow is legitimate vs test/spam.
+    
+    Prompts LLM to analyze workflow structure and patterns to determine validity.
+
+    Args:
+        workflow_json: JSON string containing the n8n workflow data
+
+    Returns:
+        str: 'GOOD' for legitimate workflows, 'BAD' for test/spam workflows
+    """    
+    legitimacy_prompt = f"""
+    You are an expert in n8n workflows. Analyze the following workflow JSON and determine if it's a legitimate workflow or a test/spam one.
+    Output only GOOD if it's a legitimate workflow, or BAD if it's a test/spam workflow.
+
+    Workflow JSON:
+    {workflow_json}
+
+    Output (GOOD/BAD):
+    """
+    return llm.invoke([HumanMessage(content=legitimacy_prompt)]).content.strip()
+
+def analyze_workflow(workflow_json):
+    """
+    Uses LLM to perform comprehensive workflow analysis.
+
+    Generates three analyses:
+    1. Overall workflow purpose and functionality
+    2. Node configuration and connections
+    3. Potential variations and expansions
+
+    Args:
+        workflow_json: JSON string containing the n8n workflow data
+
+    Returns:
+        list[str]: Three analysis results in order:
+            [purpose_summary, node_analysis, expansion_suggestions]
+    """    
+    summary_prompts = [
+        f"""
+        Summarize what the following n8n workflow is accomplishing:
+        {workflow_json}
+        Summary:
+        """,
+        f"""
+        Summarize all the nodes used in the following n8n workflow and how they are connected:
+        {workflow_json}
+        Summary:
+        """,
+        f"""
+        Based on the following n8n workflow, suggest similar workflows that could be made using this as an example. 
+        Consider different services but similar setups, and ways the workflow could be expanded:
+        {workflow_json}
+        Suggestions:
+        """
+    ]
+    
+    results = []
+    for summary_prompt in summary_prompts:
+        results.append(llm.invoke([HumanMessage(content=summary_prompt)]).content)
+    
+    return results
+
+def generate_embedding(text):
+    """
+    Creates vector embedding from text using configured embedding model.
+
+    Args:
+        text: String to generate embedding for
+
+    Returns:
+        list[float]: Vector embedding of input text
+    """    
+    return embeddings.embed_query(text)
+
+def store_in_supabase(workflow_id, workflow_name, workflow_description, workflow_info, workflow_json, n8n_demo, summaries):
+    """
+    Stores workflow data and generated analysis in Supabase.
+
+    Combines LLM-generated summaries, creates embedding, and stores complete workflow
+    record with metadata.
+
+    Args:
+        workflow_id: Unique identifier for the workflow
+        workflow_name: Name of the workflow
+        workflow_description: Description of the workflow
+        workflow_info: Additional workflow information
+        workflow_json: Raw workflow JSON data
+        n8n_demo: HTML component string for workflow visualization
+        summaries: List of three LLM-generated summaries [accomplishment, nodes, suggestions]
+    """    
+    combined_summaries = "\n\n".join(summaries)
+    embedding = generate_embedding(combined_summaries)
+    
+    data = {
+        "workflow_id": workflow_id,
+        "workflow_name": workflow_name,
+        "workflow_description": workflow_description,
+        "workflow_json": workflow_json,
+        "n8n_demo": n8n_demo,
+        "summary_accomplishment": summaries[0],
+        "summary_nodes": summaries[1],
+        "summary_suggestions": summaries[2],
+        "embedding": embedding,
+        "content": combined_summaries,
+        "metadata": {
+            "workflow_id": workflow_id,
+            "workflow_name": workflow_name,
+            "workflow_description": workflow_description,
+            "n8n_demo": n8n_demo,
+            "workflow_json": json.loads(workflow_json)            
+        }
+    }
+    supabase.table("workflows").insert(data).execute()
+
+def main():
+    """
+    Processes n8n workflow templates and stores them in Supabase.
+    
+    Iterates through workflow IDs in n8n workflow library:
+    1. Fetches workflow template
+    2. Checks legitimacy using LLM
+    3. For legitimate workflows:
+        - Processes into n8n-demo component
+        - Generates LLM analysis summaries
+        - Stores in Supabase with embeddings
+    4. Stops after [max_consecutive_failures] consecutive failures
+    
+    Rate limits:
+        - 0.5s delay between requests
+        - Max [max_consecutive_failures] consecutive failures
+    """    
+    max_id = 2500
+    consecutive_failures = 0
+    max_consecutive_failures = 1000
+
+    for workflow_id in range(1, max_id + 1):
+        workflow_data = fetch_workflow(workflow_id)
+        
+        if workflow_data:
+            workflow_name = json.dumps(workflow_data['workflow']['name'])
+            workflow_description = json.dumps(workflow_data['workflow']['description'])
+            workflow_json = json.dumps(workflow_data['workflow']['workflow'])
+            workflow_info = f"Name: {workflow_name}\nDescription: {workflow_description}\n\nJSON:\n{workflow_json}"
+
+            # print(json.dumps(workflow_data['workflow'], indent=2))
+            # print(process_workflow(workflow_data))
+            # continue
+
+            try:
+                legitimacy = check_workflow_legitimacy(workflow_info)
+            except:
+                continue
+            print(legitimacy)
+            
+            if legitimacy == "GOOD":
+                n8n_demo = process_workflow(workflow_data)
+                summaries = analyze_workflow(workflow_info)
+                
+                print(f"ID: {workflow_id}")
+                print(n8n_demo)
+                for summary in summaries:
+                    print(summary)
+                print()
+                
+                store_in_supabase(workflow_id, workflow_name, workflow_description, workflow_info, workflow_json, n8n_demo, summaries)
+            
+            consecutive_failures = 0
+        else:
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures:
+                print(f"Reached {max_consecutive_failures} consecutive failures. Stopping.")
+                break
+        
+        time.sleep(0.5)
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="N8N_Expert_Agent.json">
+{
+  "name": "N8N Expert",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ee2bcd57-3b4c-43f9-b4b7-3a25687b9a68",
+              "name": "query",
+              "value": "={{ $json.body.query }}",
+              "type": "string"
+            },
+            {
+              "id": "63f23e51-af2b-47c4-a288-5abaf9b6c357",
+              "name": "user_id",
+              "value": "={{ $json.body.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "b97a3670-8a87-481b-8695-db44624be7d8",
+              "name": "request_id",
+              "value": "={{ $json.body.request_id }}",
+              "type": "string"
+            },
+            {
+              "id": "7d3fa06d-08f7-4517-b9c5-3c46ff476f55",
+              "name": "session_id",
+              "value": "={{ $json.body.session_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f4a396a1-0e77-4ca8-9150-d27c4af2ee77",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "3f7da8d5-e9d3-4c0b-9648-f23cdfb0dbfa",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        820
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "05Q6PbnSdyEcu9Ze",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "text",
+              "renameField": true,
+              "outputFieldName": "workflow_ids"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aad41c91-c6d6-48c3-9e43-346a5069c667",
+      "name": "Aggregate",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {}
+      },
+      "id": "cf371ddb-1521-4e9c-813c-5e5c7fdbce44",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        560
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "05Q6PbnSdyEcu9Ze",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "workflows",
+        "limit": 5,
+        "filterType": "string",
+        "filterString": "=workflow_id=in.{{ $json.query_string }}"
+      },
+      "id": "16abcadb-db84-4be0-821d-725cd53ac196",
+      "name": "Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        400
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "concatenate",
+              "field": "workflow_ids"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1e00bcc2-ea78-4b35-8c81-2ee625c7d5a2",
+      "name": "Summarize",
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1,
+      "position": [
+        1940,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.query_string = $('Summarize').first().json.concatenated_workflow_ids.replaceAll(\"\\\"\", \"\").replaceAll(\"[\", \"(\").replaceAll(\"]\", \")\");\n}\n\nreturn $input.all();"
+      },
+      "id": "64627fc4-d2e5-42d4-a0b5-3bcd931d24ab",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b5eaa2a2-a6bc-40ab-af5e-baa8a5dda1a7",
+              "name": "output",
+              "value": "={{ $('Aggregate1').item.json.data.length ? \"Here are the recommended workflows to use as an example for you:\" : \"No related workflows found at this time. Please try a different prompt.\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "4a14b34b-ecb6-4d43-836c-ceec97f626cd",
+      "name": "Edit Fields1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2720,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $('Edit Fields').first().json.session_id }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ {\n\"type\": \"ai\",\n\"content\": $json.output,\n\"data\": $json.data,\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
+            }
+          ]
+        }
+      },
+      "id": "b9f99ec8-96df-45ff-9d41-c78328889a1e",
+      "name": "Supabase1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2920,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "df095f3f-9691-419e-aca6-c43eabe14de8",
+      "name": "Aggregate1",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2520,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-n8n-Signature",
+                "value": "EvtIS^EBVISeie6svB@6ev"
+              }
+            ]
+          }
+        }
+      },
+      "id": "59550b57-845f-49ef-80c8-b14eae1d2d5a",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3320,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Here is a n8n workflow descriptions:\n\n{{ $json.document.pageContent }}\n\nYour job is to identify if the workflow is relevant to the user query which is:\n\n{{ $('Edit Fields').first().json.query }}\n\nOutput the workflow ID if the workflow relates to the user query. Otherwise, output -1. ONLY ever output a number, nothing else. You will always output the workflow ID or -1.\n\nThe workflow ID is: {{ $json.document.metadata.workflow_id }}\n\nThe workflow ID or -1 if the workflow doesn't relate to the user query:"
+      },
+      "id": "4c49b44d-b707-41ef-8577-4939df2bc2db",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        1360,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b5eaa2a2-a6bc-40ab-af5e-baa8a5dda1a7",
+              "name": "output",
+              "value": "={{ $('Edit Fields1').item.json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "392160a6-53a6-4b7e-9c43-75571172c590",
+              "name": "data",
+              "value": "={{ $('Edit Fields1').item.json.data}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "416ee827-a9a5-4461-8b77-798b7ecaea50",
+      "name": "Edit Fields2",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3120,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $json.session_id }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ {\n\"type\": \"human\",\n\"content\": $json.query,\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
+            }
+          ]
+        }
+      },
+      "id": "79873137-cbdb-4c90-9dc6-adbcb516f6de",
+      "name": "Supabase2",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        840,
+        420
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": {
+          "__rl": true,
+          "value": "workflows",
+          "mode": "list",
+          "cachedResultName": "workflows"
+        },
+        "prompt": "={{ $('Edit Fields').item.json.query }}",
+        "topK": 5,
+        "options": {
+          "queryName": "match_summaries"
+        }
+      },
+      "id": "ee10e7a4-da98-4775-b641-310ce79110a4",
+      "name": "Supabase Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        640
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## The n8n Expert Agent helps you find and understand n8n automation workflows. Simply describe what you're trying to automate, and the agent will recommend relevant workflows to help you get started.\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\n## For example:\n\n### User: \"I need to automatically post tweets when new blog posts are published\"\n### Agent: Here are some recommended workflows to help you get started:\n- WordPress to Twitter Auto-Poster\n- Blog RSS Feed to Social Media\n- Content Distribution Workflow\nThe agent analyzes your request and provides matching workflows from its knowledge base, along with explanations of how to implement and customize them for your needs.",
+        "height": 502.790697674419,
+        "width": 651.0139534883727,
+        "color": 6
+      },
+      "id": "1ac32a2f-f121-4b7c-bfb6-b90056c9d6bd",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoke-n8n-expert",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "90236e22-385a-49ba-8d5c-263a60a82f33",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        460,
+        460
+      ],
+      "webhookId": "ba5e9235-01af-47f8-9f72-29df862bfa0f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o5akNgXQQR74Sezh",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "#### This agent is in beta, especially as its knowledgebase grows! Workflows won't always be super related to your query and sometimes it won't have any. This agent will also involve into a conversational agent eventually to help you build n8n workflows!",
+        "height": 111.41953488372111,
+        "width": 648.3795348837208
+      },
+      "id": "934e70b5-3825-4bb7-91e3-0fa786bf88e8",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        900
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Supabase2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Supabase1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase2": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9cb778c5-1d8e-4af0-a6fd-8107eb8069ef",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"
+  },
+  "id": "e1rZ3MNMH9g4i1Yw",
+  "tags": [
+    {
+      "createdAt": "2024-12-09T14:35:20.507Z",
+      "updatedAt": "2024-12-09T14:35:20.507Z",
+      "id": "wBUwbX8AS8QmBHOC",
+      "name": "studio-prod"
+    }
+  ]
+}
+</file>
+
+<file path="README.md">
+# n8n Expert Agent Workflow
+
+Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
+
+The n8n Expert Agent helps you find and understand n8n automation workflows. Simply describe what you're trying to automate, and the agent will recommend relevant workflows to help you get started.
+
+For example:
+```
+User: "I need to automatically post tweets when new blog posts are published"
+Agent: Here are some recommended workflows to help you get started:
+- WordPress to Twitter Auto-Poster
+- Blog RSS Feed to Social Media
+- Content Distribution Workflow
+```
+
+The agent analyzes your request and provides matching workflows from its knowledge base, along with explanations of how to implement and customize them for your needs.
+
+This agent is in beta, especially as its knowledgebase grows! Workflows won't always be super related to your query and sometimes it won't have any. This agent will also involve into a conversational agent eventually to help you build n8n workflows!
+
+## Features
+
+- **Workflow Analysis**: Uses advanced LLM models to analyze n8n workflows and generate comprehensive summaries of:
+  - Overall workflow purpose and functionality
+  - Node configuration and connections
+  - Potential variations and expansion suggestions
+
+- **Legitimacy Validation**: Automatically detects and filters out test/spam workflows using AI-powered analysis
+
+- **Workflow Processing**: 
+  - Fetches workflow templates from n8n's public API
+  - Converts workflows into HTML demo components
+  - Generates vector embeddings for semantic search
+
+- **Data Storage**: 
+  - Stores processed workflows and analysis in Supabase
+  - Maintains workflow metadata, summaries, and searchable embeddings
+
+## Core Capabilities
+
+1. **Intelligent Workflow Recommendations**
+   - Processes natural language queries about automation needs
+   - Uses LLM-powered analysis to match user requirements with existing workflows
+   - Provides contextually relevant workflow suggestions based on user intent
+
+2. **Semantic Search and Analysis**
+   - Maintains a vector database of workflow descriptions and capabilities
+   - Performs semantic similarity matching between user queries and workflow purposes
+   - Filters and ranks workflows based on relevance to the user's needs
+
+3. **Interactive Assistance**
+   - Responds through a webhook-based API endpoint (`/invoke-n8n-expert`)
+   - Maintains conversation context through session management
+   - Provides detailed explanations of recommended workflows
+
+### Use Cases
+
+1. **Workflow Discovery**
+   ```
+   User: "I need to automatically post tweets when new blog posts are published"
+   Agent: *Analyzes request and searches workflow database*
+   Result: Returns relevant WordPress-to-Twitter automation workflows
+   ```
+
+2. **Implementation Guidance**
+   - Explains how to adapt recommended workflows
+   - Highlights key nodes and configurations
+   - Suggests potential customizations
+
+3. **Best Practices**
+   - Recommends optimal node configurations
+   - Suggests error handling and reliability improvements
+   - Provides security and performance optimization tips
+
+### Integration Features
+
+1. **API Integration**
+   - Secure webhook endpoint with header authentication
+   - Structured JSON response format
+   - Session-based conversation tracking
+
+2. **Database Integration**
+   - Supabase backend for workflow storage
+   - Vector embeddings for semantic search
+   - Message history and context management
+
+3. **LLM Integration**
+   - Advanced language model for query understanding
+   - Workflow relevance scoring
+   - Natural language response generation
+
+### Example Interactions
+
+1. **Workflow Search**
+   ```
+   Input: "How can I sync data between Airtable and Google Sheets?"
+   Response: Provides relevant workflow examples with:
+   - Step-by-step implementation guide
+   - Required node configurations
+   - Customization options
+   ```
+
+2. **Workflow Enhancement**
+   ```
+   Input: "How can I add error handling to my email automation?"
+   Response: Suggests:
+   - Error handling nodes to add
+   - Retry configurations
+   - Notification setup for failures
+   ```
+
+## Setup
+
+1. Copy `.env.example` to `.env` and configure the following environment variables:
+   - `LLM_MODEL`: Language model to use (default: 'gpt-4')
+   - `EMBEDDING_MODEL`: Embedding model (default: 'text-embedding-3-small')
+   - `SUPABASE_URL`: Your Supabase project URL
+   - `SUPABASE_SERVICE_KEY`: Your Supabase service key
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Workflow Ingestion
+
+Run the workflow ingestion script:
+```bash
+python ingest-n8n-workflows.py
+```
+
+This will:
+1. Fetch workflows from n8n's template library
+2. Validate each workflow
+3. Generate analysis and embeddings
+4. Store processed data in Supabase
+
+### API Integration
+
+The agent can be integrated into n8n workflows using the provided `N8N_Expert_Agent.json` workflow template, which handles:
+- Webhook endpoints for workflow processing
+- Query parameter handling
+- User session management
+- Database interactions
+
+## Files
+
+- `N8N_Expert_Agent.json`: Main n8n workflow template for the expert agent
+- `ingest-n8n-workflows.py`: Python script for processing and storing n8n workflows
+- `requirements.txt`: Python package dependencies
+- `sql_script.sql`: Database schema and setup scripts
+- `.env.example`: Example environment configuration file
+
+## Dependencies
+
+Key dependencies include:
+- LangChain for LLM interactions
+- OpenAI/Anthropic for language models
+- Supabase for data storage
+- Various Python utilities (see requirements.txt for full list)
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+aiohappyeyeballs==2.4.3
+aiohttp==3.10.10
+aiosignal==1.3.1
+annotated-types==0.7.0
+anthropic==0.36.1
+anyio==4.6.2.post1
+attrs==24.2.0
+certifi==2024.8.30
+charset-normalizer==3.4.0
+colorama==0.4.6
+defusedxml==0.7.1
+deprecation==2.1.0
+distro==1.9.0
+filelock==3.16.1
+frozenlist==1.4.1
+fsspec==2024.9.0
+gotrue==2.9.2
+greenlet==3.1.1
+h11==0.14.0
+h2==4.1.0
+hpack==4.0.0
+httpcore==1.0.6
+httpx==0.27.2
+huggingface-hub==0.25.2
+hyperframe==6.0.1
+idna==3.10
+jiter==0.6.1
+jsonpatch==1.33
+jsonpointer==3.0.0
+langchain==0.3.3
+langchain-anthropic==0.2.3
+langchain-core==0.3.11
+langchain-openai==0.2.2
+langchain-text-splitters==0.3.0
+langsmith==0.1.135
+multidict==6.1.0
+numpy==1.26.4
+openai==1.51.2
+orjson==3.10.7
+packaging==24.1
+postgrest==0.17.1
+propcache==0.2.0
+pydantic==2.9.2
+pydantic_core==2.23.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+PyYAML==6.0.2
+realtime==2.0.5
+regex==2024.9.11
+requests==2.32.3
+requests-toolbelt==1.0.0
+six==1.16.0
+sniffio==1.3.1
+SQLAlchemy==2.0.36
+storage3==0.8.1
+StrEnum==0.4.15
+supabase==2.9.0
+supafunc==0.6.1
+tenacity==8.5.0
+tiktoken==0.8.0
+tokenizers==0.20.1
+tqdm==4.66.5
+typing_extensions==4.12.2
+urllib3==2.2.3
+websockets==13.1
+yarl==1.15.4
+</file>
+
+<file path="sql_script.sql">
+-- Create the table for processed n8n workflows and their summaries
+CREATE TABLE workflows (
+    workflow_id INTEGER PRIMARY KEY,
+    workflow_name TEXT NOT NULL,
+    workflow_description TEXT NOT NULL,
+    workflow_json JSONB NOT NULL,
+    n8n_demo TEXT NOT NULL,
+    summary_accomplishment TEXT NOT NULL,
+    summary_nodes TEXT NOT NULL,
+    summary_suggestions TEXT NOT NULL,
+    embedding vector(1536),
+    content TEXT NOT NULL,
+    metadata JSONB
+);
+
+DROP FUNCTION IF EXISTS match_summaries(vector, integer, jsonb);
+
+-- Create a function to search for summaries
+create function match_summaries (
+  query_embedding vector(1536),
+  match_count int default null,
+  filter jsonb DEFAULT '{}'
+) returns table (
+  id integer,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+language plpgsql
+as $$
+#variable_conflict use_column
+begin
+  return query
+  select
+    workflow_id as id,
+    content,
+    metadata,
+    1 - (workflows.embedding <=> query_embedding) as similarity
+  from workflows
+  where metadata @> filter
+  order by workflows.embedding <=> query_embedding
+  limit match_count;
+end;
+$$;
+</file>
+
+</files>

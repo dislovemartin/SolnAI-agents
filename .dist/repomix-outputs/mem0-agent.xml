@@ -1,0 +1,1127 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+iterations/
+  v1-basic-mem0.py
+  v2-supabase-mem0.py
+  v3-streamlit-supabase-mem0.py
+studio-integration-version/
+  .dockerignore
+  .env.example
+  Dockerfile
+  mem0_agent_endpoint.py
+  mem0_agent.py
+  requirements.txt
+.env.example
+README.md
+requirements.txt
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="iterations/v1-basic-mem0.py">
+from dotenv import load_dotenv
+from openai import OpenAI
+from mem0 import Memory
+
+# Load environment variables
+load_dotenv()
+
+config = {
+    "llm": {
+        "provider": "openai",
+        "config": {
+            "model": "gpt-4o-mini"
+        }
+    }
+}
+
+openai_client = OpenAI()
+memory = Memory.from_config(config)
+
+def chat_with_memories(message: str, user_id: str = "default_user") -> str:
+    # Retrieve relevant memories
+    relevant_memories = memory.search(query=message, user_id=user_id, limit=3)
+    memories_str = "\n".join(f"- {entry['memory']}" for entry in relevant_memories["results"])
+    
+    # Generate Assistant response
+    system_prompt = f"You are a helpful AI. Answer the question based on query and memories.\nUser Memories:\n{memories_str}"
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    response = openai_client.chat.completions.create(model="gpt-4o-mini", messages=messages)
+    assistant_response = response.choices[0].message.content
+
+    # Create new memories from the conversation
+    messages.append({"role": "assistant", "content": assistant_response})
+    memory.add(messages, user_id=user_id)
+
+    return assistant_response
+
+def main():
+    print("Chat with AI (type 'exit' to quit)")
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() == 'exit':
+            print("Goodbye!")
+            break
+        print(f"AI: {chat_with_memories(user_input)}")
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="iterations/v2-supabase-mem0.py">
+from dotenv import load_dotenv
+from openai import OpenAI
+from mem0 import Memory
+import os
+
+# Load environment variables
+load_dotenv()
+
+config = {
+    "llm": {
+        "provider": "openai",
+        "config": {
+            "model": os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+        }
+    },
+    "vector_store": {
+        "provider": "supabase",
+        "config": {
+            "connection_string": os.environ['DATABASE_URL'],
+            "collection_name": "memories"
+        }
+    }    
+}
+
+openai_client = OpenAI()
+memory = Memory.from_config(config)
+
+def chat_with_memories(message: str, user_id: str = "default_user") -> str:
+    # Retrieve relevant memories
+    relevant_memories = memory.search(query=message, user_id=user_id, limit=3)
+    memories_str = "\n".join(f"- {entry['memory']}" for entry in relevant_memories["results"])
+    
+    # Generate Assistant response
+    system_prompt = f"You are a helpful AI. Answer the question based on query and memories.\nUser Memories:\n{memories_str}"
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    response = openai_client.chat.completions.create(model="gpt-4o-mini", messages=messages)
+    assistant_response = response.choices[0].message.content
+
+    # Create new memories from the conversation
+    messages.append({"role": "assistant", "content": assistant_response})
+    memory.add(messages, user_id=user_id)
+
+    return assistant_response
+
+def main():
+    print("Chat with AI (type 'exit' to quit)")
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() == 'exit':
+            print("Goodbye!")
+            break
+        print(f"AI: {chat_with_memories(user_input)}")
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="iterations/v3-streamlit-supabase-mem0.py">
+import os
+import streamlit as st
+from dotenv import load_dotenv
+from openai import OpenAI
+from mem0 import Memory
+import supabase
+from supabase.client import Client, ClientOptions
+import uuid
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Supabase client
+supabase_url = os.environ.get("SUPABASE_URL", "")
+supabase_key = os.environ.get("SUPABASE_KEY", "")
+supabase_client = supabase.create_client(supabase_url, supabase_key)
+
+model = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+
+# Streamlit page configuration
+st.set_page_config(
+    page_title="Mem0 Chat Assistant",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Cache OpenAI client and Memory instance
+@st.cache_resource
+def get_openai_client():
+    return OpenAI()
+
+@st.cache_resource
+def get_memory():
+    config = {
+        "llm": {
+            "provider": "openai",
+            "config": {
+                "model": model
+            }
+        },
+        "vector_store": {
+            "provider": "supabase",
+            "config": {
+                "connection_string": os.environ['DATABASE_URL'],
+                "collection_name": "memories"
+            }
+        }    
+    }
+    return Memory.from_config(config)
+
+# Get cached resources
+openai_client = get_openai_client()
+memory = get_memory()
+
+# Authentication functions
+def sign_up(email, password, full_name):
+    try:
+        response = supabase_client.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {
+                "data": {
+                    "full_name": full_name
+                }
+            }
+        })
+        if response and response.user:
+            st.session_state.authenticated = True
+            st.session_state.user = response.user
+            st.rerun()
+        return response
+    except Exception as e:
+        st.error(f"Error signing up: {str(e)}")
+        return None
+
+def sign_in(email, password):
+    try:
+        response = supabase_client.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        if response and response.user:
+            # Store user info directly in session state
+            st.session_state.authenticated = True
+            st.session_state.user = response.user
+            st.rerun()
+        return response
+    except Exception as e:
+        st.error(f"Error signing in: {str(e)}")
+        return None
+
+def sign_out():
+    try:
+        supabase_client.auth.sign_out()
+        # Clear only authentication-related session state
+        st.session_state.authenticated = False
+        st.session_state.user = None
+        # Set a flag to trigger rerun on next render
+        st.session_state.logout_requested = True
+    except Exception as e:
+        st.error(f"Error signing out: {str(e)}")
+
+# Chat function with memory
+def chat_with_memories(message, user_id):
+    # Retrieve relevant memories
+    relevant_memories = memory.search(query=message, user_id=user_id, limit=3)
+    memories_str = "\n".join(f"- {entry['memory']}" for entry in relevant_memories["results"])
+    
+    # Generate Assistant response
+    system_prompt = f"You are a helpful AI assistant with memory. Answer the question based on the query and user's memories.\nUser Memories:\n{memories_str}"
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    
+    with st.spinner("Thinking..."):
+        response = openai_client.chat.completions.create(model=model, messages=messages)
+        assistant_response = response.choices[0].message.content
+
+    # Create new memories from the conversation
+    messages.append({"role": "assistant", "content": assistant_response})
+    memory.add(messages, user_id=user_id)
+
+    return assistant_response
+
+# Initialize session state
+if not st.session_state.get("messages", None):
+    st.session_state.messages = []
+
+if not st.session_state.get("authenticated", None):
+    st.session_state.authenticated = False
+
+if not st.session_state.get("user", None):
+    st.session_state.user = None
+
+# Check for logout flag and clear it after processing
+if st.session_state.get("logout_requested", False):
+    st.session_state.logout_requested = False
+    st.rerun()
+
+# Sidebar for authentication
+with st.sidebar:
+    st.title("🧠 Mem0 Chat")
+    
+    if not st.session_state.authenticated:
+        tab1, tab2 = st.tabs(["Login", "Sign Up"])
+        
+        with tab1:
+            st.subheader("Login")
+            login_email = st.text_input("Email", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            login_button = st.button("Login")
+            
+            if login_button:
+                if login_email and login_password:
+                    sign_in(login_email, login_password)
+                else:
+                    st.warning("Please enter both email and password.")
+        
+        with tab2:
+            st.subheader("Sign Up")
+            signup_email = st.text_input("Email", key="signup_email")
+            signup_password = st.text_input("Password", type="password", key="signup_password")
+            signup_name = st.text_input("Full Name", key="signup_name")
+            signup_button = st.button("Sign Up")
+            
+            if signup_button:
+                if signup_email and signup_password and signup_name:
+                    response = sign_up(signup_email, signup_password, signup_name)
+                    if response and response.user:
+                        st.success("Sign up successful! Please check your email to confirm your account.")
+                    else:
+                        st.error("Sign up failed. Please try again.")
+                else:
+                    st.warning("Please fill in all fields.")
+    else:
+        user = st.session_state.user
+        if user:
+            st.success(f"Logged in as: {user.email}")
+            st.button("Logout", on_click=sign_out)
+            
+            # Display user information
+            st.subheader("Your Profile")
+            st.write(f"User ID: {user.id}")
+            
+            # Memory management options
+            st.subheader("Memory Management")
+            if st.button("Clear All Memories"):
+                memory.clear(user_id=user.id)
+                st.success("All memories cleared!")
+                st.session_state.messages = []
+                st.rerun()
+
+# Main chat interface
+if st.session_state.authenticated and st.session_state.user:
+    # Use the user from session state directly
+    user_id = st.session_state.user.id
+    
+    st.title("Chat with Memory-Powered AI")
+    st.write("Your conversation history and preferences are remembered across sessions.")
+    
+    # Display chat messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+    
+    # Chat input
+    user_input = st.chat_input("Type your message here...")
+    
+    if user_input:
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.write(user_input)
+        
+        # Get AI response
+        ai_response = chat_with_memories(user_input, user_id)
+        
+        # Add AI response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+        
+        # Display AI response
+        with st.chat_message("assistant"):
+            st.write(ai_response)
+else:
+    st.title("Welcome to Mem0 Chat Assistant")
+    st.write("Please login or sign up to start chatting with the memory-powered AI assistant.")
+    st.write("This application demonstrates how AI can remember your conversations and preferences over time.")
+    
+    # Feature highlights
+    st.subheader("Features")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("### 🧠 Long-term Memory")
+        st.write("The AI remembers your past conversations and preferences.")
+    
+    with col2:
+        st.markdown("### 🔒 Secure Authentication")
+        st.write("Your data is protected with Supabase authentication.")
+    
+    with col3:
+        st.markdown("### 💬 Personalized Responses")
+        st.write("Get responses tailored to your history and context.")
+
+if __name__ == "__main__":
+    # This section won't run in Streamlit
+    pass
+</file>
+
+<file path="studio-integration-version/.dockerignore">
+__pycache__
+venv
+</file>
+
+<file path="studio-integration-version/.env.example">
+# Get your Open AI API Key by following these instructions -
+# https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+OPENAI_API_KEY=
+
+# The LLM to use (defaults to gpt-4o-mini)
+LLM_MODEL=
+
+# Get your Supabase DATABASE_URL from the Database section of your Supabase project settings-
+# https://supabase.com/dashboard/project/<your project ID>/settings/database
+# Make sure you replace the [YOUR-PASSWORD] placeholder with your DB password you set when creating your account.
+# Be sure ot use URL coding for your password (example, '@' is %40, '?' is %3F, etc.)
+# You can reset this if needed on the same database settings page.
+DATABASE_URL=
+
+# Supabase configuration for authentication
+# Get these from your Supabase project settings -> API
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+</file>
+
+<file path="studio-integration-version/Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Install the Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+CMD ["sh", "-c", "uvicorn mem0_agent_endpoint:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="studio-integration-version/mem0_agent_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+from mem0 import Memory
+import httpx
+import sys
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+from mem0_agent import mem0_agent, Mem0Deps
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Mem0 Setup
+config = {
+    "llm": {
+        "provider": "openai",
+        "config": {
+            "model": os.getenv('LLM_MODEL', 'gpt-4o-mini')
+        }
+    },
+    "vector_store": {
+        "provider": "supabase",
+        "config": {
+            "connection_string": os.environ['DATABASE_URL'],
+            "collection_name": "memories"
+        }
+    }    
+}
+
+memory = Memory.from_config(config)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/mem0-agent", response_model=AgentResponse)
+async def web_search(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=msg_content)])
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )       
+
+        # Retrieve relevant memories with Mem0
+        relevant_memories = memory.search(query=request.query, user_id=request.user_id, limit=3)
+        memories_str = "\n".join(f"- {entry['memory']}" for entry in relevant_memories["results"])     
+
+        # Initialize agent dependencies
+        async with httpx.AsyncClient() as client:
+            deps = Mem0Deps(
+                memories=memories_str
+            )
+
+            # Run the agent with conversation history
+            result = await mem0_agent.run(
+                request.query,
+                message_history=messages,
+                deps=deps
+            )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=result.data,
+            data={"request_id": request.request_id}
+        )
+
+        # Update memories based on the last user message and agent response
+        memory_messages = [
+            {"role": "user", "content": request.query},
+            {"role": "assistant", "content": result.data}
+        ]
+        memory.add(memory_messages, user_id=request.user_id)        
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing agent request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="studio-integration-version/mem0_agent.py">
+from __future__ import annotations as _annotations
+
+import asyncio
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+import logfire
+from dotenv import load_dotenv
+
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai import Agent, ModelRetry, RunContext
+
+load_dotenv()
+llm = os.getenv('LLM_MODEL', 'gpt-4o-mini')
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+logfire.configure(send_to_logfire='if-token-present')
+
+
+@dataclass
+class Mem0Deps:
+    memories: str
+
+
+mem0_agent = Agent(
+    OpenAIModel(llm),
+    system_prompt=f'You are a helpful AI. Answer the question based on query and memories. The current date is: {datetime.now().strftime("%Y-%m-%d")}',
+    deps_type=Mem0Deps,
+    retries=2
+)
+
+@mem0_agent.system_prompt  
+def add_memories(ctx: RunContext[str]) -> str:
+    return f"\nUser Memories:\n{ctx.deps.memories}"
+
+async def main():
+    deps = Mem0Deps(memories="")
+    
+    result = await mem0_agent.run(
+        'Greetings!', deps=deps
+    )
+    
+    print('Response:', result.data)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+</file>
+
+<file path="studio-integration-version/requirements.txt">
+aiohappyeyeballs==2.5.0
+aiohttp==3.11.13
+aiosignal==1.3.2
+altair==5.5.0
+annotated-types==0.7.0
+anthropic==0.49.0
+anyio==4.8.0
+argcomplete==3.6.0
+attrs==25.1.0
+backoff==2.2.1
+blinker==1.9.0
+cachetools==5.5.2
+certifi==2025.1.31
+charset-normalizer==3.4.1
+click==8.1.8
+cohere==5.14.0
+colorama==0.4.6
+Deprecated==1.2.18
+deprecation==2.1.0
+distro==1.9.0
+eval_type_backport==0.2.2
+executing==2.2.0
+fastapi==0.115.11
+fastavro==1.10.0
+filelock==3.17.0
+flupy==1.2.1
+frozenlist==1.5.0
+fsspec==2025.2.0
+gitdb==4.0.12
+GitPython==3.1.44
+google-auth==2.38.0
+googleapis-common-protos==1.69.0
+gotrue==2.11.4
+greenlet==3.1.1
+griffe==1.6.0
+groq==0.18.0
+grpcio==1.70.0
+grpcio-tools==1.70.0
+h11==0.14.0
+h2==4.2.0
+hpack==4.1.0
+httpcore==1.0.7
+httpx==0.28.1
+httpx-sse==0.4.0
+huggingface-hub==0.29.2
+hyperframe==6.1.0
+idna==3.10
+importlib_metadata==8.5.0
+Jinja2==3.1.6
+jiter==0.8.2
+jsonpath-python==1.0.6
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+logfire==3.7.1
+logfire-api==3.7.1
+markdown-it-py==3.0.0
+MarkupSafe==3.0.2
+mdurl==0.1.2
+mem0ai==0.1.65
+mistralai==1.5.0
+monotonic==1.6
+multidict==6.1.0
+mypy-extensions==1.0.0
+narwhals==1.29.1
+numpy==2.2.3
+openai==1.65.4
+opentelemetry-api==1.30.0
+opentelemetry-exporter-otlp-proto-common==1.30.0
+opentelemetry-exporter-otlp-proto-http==1.30.0
+opentelemetry-instrumentation==0.51b0
+opentelemetry-proto==1.30.0
+opentelemetry-sdk==1.30.0
+opentelemetry-semantic-conventions==0.51b0
+packaging==24.2
+pandas==2.2.3
+pgvector==0.3.6
+pillow==11.1.0
+portalocker==2.10.1
+postgrest==0.19.3
+posthog==3.18.1
+prompt_toolkit==3.0.50
+propcache==0.3.0
+protobuf==5.29.3
+psycopg2-binary==2.9.10
+pyarrow==19.0.1
+pyasn1==0.6.1
+pyasn1_modules==0.4.1
+pydantic==2.10.6
+pydantic-ai==0.0.35
+pydantic-ai-slim==0.0.35
+pydantic-graph==0.0.35
+pydantic_core==2.27.2
+pydeck==0.9.1
+Pygments==2.19.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytz==2024.2
+PyYAML==6.0.2
+qdrant-client==1.13.3
+realtime==2.4.1
+referencing==0.36.2
+requests==2.32.3
+rich==13.9.4
+rpds-py==0.23.1
+rsa==4.9
+setuptools==75.8.2
+six==1.17.0
+smmap==5.0.2
+sniffio==1.3.1
+SQLAlchemy==2.0.38
+starlette==0.46.0
+storage3==0.11.3
+streamlit==1.43.0
+StrEnum==0.4.15
+supabase==2.13.0
+supafunc==0.9.3
+tenacity==9.0.0
+tokenizers==0.21.0
+toml==0.10.2
+tornado==6.4.2
+tqdm==4.67.1
+types-requests==2.32.0.20250306
+typing-inspect==0.9.0
+typing-inspection==0.4.0
+typing_extensions==4.12.2
+tzdata==2025.1
+urllib3==2.3.0
+uvicorn==0.34.0
+vecs==0.4.5
+watchdog==6.0.0
+wcwidth==0.2.13
+websockets==14.2
+wrapt==1.17.2
+yarl==1.18.3
+zipp==3.21.0
+</file>
+
+<file path=".env.example">
+# Get your Open AI API Key by following these instructions -
+# https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+OPENAI_API_KEY=
+
+# Below variables are for V2 and beyond:
+
+# The LLM to use (defaults to gpt-4o-mini)
+MODEL_CHOICE=gpt-4o-mini
+
+# Get your Supabase DATABASE_URL from the Database section of your Supabase project settings-
+# https://supabase.com/dashboard/project/<your project ID>/settings/database
+# Make sure you replace the [YOUR-PASSWORD] placeholder with your DB password you set when creating your account.
+# Be sure ot use URL coding for your password (example, '@' is %40, '?' is %3F, etc.)
+# You can reset this if needed on the same database settings page.
+DATABASE_URL=
+
+# Supabase configuration for authentication
+# Get these from your Supabase project settings -> API
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+</file>
+
+<file path="README.md">
+# Mem0 Agent - Memory-Powered AI Assistant
+
+This project demonstrates how to build an AI assistant with memory capabilities using the Mem0 library, OpenAI, and Supabase for authentication and vector storage.
+
+The Live Agent Studio integration verison referenced below also shows how to integrate Mem0 with a Pydantic AI agent.
+
+## Features
+
+- **🧠 Long-term Memory**: The AI remembers past conversations and preferences
+- **🔒 Secure Authentication**: User data is protected with Supabase authentication
+- **💬 Personalized Responses**: Get responses tailored to your history and context
+- **🌐 Streamlit Interface**: Easy-to-use web interface for chatting with the AI
+
+## Project Structure
+
+This repository contains multiple implementations of the Mem0 agent:
+
+1. **Basic Implementation** (`iterations/v1-basic-mem0.py`): Simple implementation using in-memory storage
+2. **Supabase Integration** (`iterations/v2-supabase-mem0.py`): Enhanced implementation with Supabase vector storage
+3. **Streamlit Web Interface** (`iterations/v3-streamlit-supabase-mem0.py`): Basic Streamlit web application with Supabase authentication for mem0 user IDs
+4. **Live Agent Studio Integration** (`studio-integration-version/`): Code for integrating with Live Agent Studio
+
+The `studio-integration-version` folder contains the code used to integrate this agent into the Live Agent Studio, including:
+- API endpoint setup
+- Database integration
+- Authentication handling
+- Message history management
+
+## Prerequisites
+
+- Python 3.11+
+- OpenAI API key
+- Supabase account and project
+
+## Setup Instructions
+
+1. **Create and activate a virtual environment**:
+   ```bash
+   # On Windows
+   python -m venv venv
+   venv\Scripts\activate
+
+   # On macOS/Linux
+   python -m venv venv
+   source venv/bin/activate
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment variables**:
+   Copy the `.env.example` file to `.env` and fill in your API keys:
+   - `OPENAI_API_KEY`: Your OpenAI API key
+   - `MODEL_CHOICE`: The OpenAI model to use (defaults to gpt-4o-mini)
+   - `DATABASE_URL`: Your Supabase PostgreSQL connection string
+   - `SUPABASE_URL`: Your Supabase project URL
+   - `SUPABASE_KEY`: Your Supabase service role key
+
+4. **Run the application**:
+   ```bash
+   streamlit run iterations/v3-streamlit-supabase-mem0.py
+   ```
+
+## Supabase Setup
+
+1. Create a Supabase account and project at [supabase.com](https://supabase.com)
+2. Get your Database URL from: Project Settings > Database
+3. Get your API keys from: Project Settings > API
+
+## How It Works
+
+The application uses:
+- **Mem0**: For memory management and retrieval
+- **OpenAI**: For generating AI responses
+- **Supabase**: For authentication and vector storage
+- **Streamlit**: For the web interface
+
+When a user sends a message, the system:
+1. Retrieves relevant memories based on the query
+2. Includes these memories in the prompt to OpenAI
+3. Stores the conversation as a new memory
+4. Displays the response to the user
+
+## Studio Integration
+
+The `studio-integration-version` folder contains everything needed to deploy this agent to the Live Agent Studio:
+
+- `mem0_agent.py`: Core agent implementation
+- `mem0_agent_endpoint.py`: FastAPI endpoint for the agent
+- `Dockerfile`: Container configuration for deployment
+- `.env.example`: Template for required environment variables
+
+## Troubleshooting
+
+1. **Authentication Issues**:
+   - Verify your Supabase credentials are correctly set in the `.env` file
+   - Check if your Supabase project has Email Auth enabled
+
+2. **Database Connection Issues**:
+   - Verify your DATABASE_URL is correctly formatted
+   - Make sure you aren't using special characters in your database password. See the note in `.env.example`.
+</file>
+
+<file path="requirements.txt">
+aiohappyeyeballs==2.5.0
+aiohttp==3.11.13
+aiosignal==1.3.2
+altair==5.5.0
+annotated-types==0.7.0
+anthropic==0.49.0
+anyio==4.8.0
+argcomplete==3.6.0
+attrs==25.1.0
+backoff==2.2.1
+blinker==1.9.0
+cachetools==5.5.2
+certifi==2025.1.31
+charset-normalizer==3.4.1
+click==8.1.8
+cohere==5.14.0
+colorama==0.4.6
+Deprecated==1.2.18
+deprecation==2.1.0
+distro==1.9.0
+eval_type_backport==0.2.2
+executing==2.2.0
+fastapi==0.115.11
+fastavro==1.10.0
+filelock==3.17.0
+flupy==1.2.1
+frozenlist==1.5.0
+fsspec==2025.2.0
+gitdb==4.0.12
+GitPython==3.1.44
+google-auth==2.38.0
+googleapis-common-protos==1.69.0
+gotrue==2.11.4
+greenlet==3.1.1
+griffe==1.6.0
+groq==0.18.0
+grpcio==1.70.0
+grpcio-tools==1.70.0
+h11==0.14.0
+h2==4.2.0
+hpack==4.1.0
+httpcore==1.0.7
+httpx==0.28.1
+httpx-sse==0.4.0
+huggingface-hub==0.29.2
+hyperframe==6.1.0
+idna==3.10
+importlib_metadata==8.5.0
+Jinja2==3.1.6
+jiter==0.8.2
+jsonpath-python==1.0.6
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+logfire==3.7.1
+logfire-api==3.7.1
+markdown-it-py==3.0.0
+MarkupSafe==3.0.2
+mdurl==0.1.2
+mem0ai==0.1.65
+mistralai==1.5.0
+monotonic==1.6
+multidict==6.1.0
+mypy-extensions==1.0.0
+narwhals==1.29.1
+numpy==2.2.3
+openai==1.65.4
+opentelemetry-api==1.30.0
+opentelemetry-exporter-otlp-proto-common==1.30.0
+opentelemetry-exporter-otlp-proto-http==1.30.0
+opentelemetry-instrumentation==0.51b0
+opentelemetry-proto==1.30.0
+opentelemetry-sdk==1.30.0
+opentelemetry-semantic-conventions==0.51b0
+packaging==24.2
+pandas==2.2.3
+pgvector==0.3.6
+pillow==11.1.0
+portalocker==2.10.1
+postgrest==0.19.3
+posthog==3.18.1
+prompt_toolkit==3.0.50
+propcache==0.3.0
+protobuf==5.29.3
+psycopg2-binary==2.9.10
+pyarrow==19.0.1
+pyasn1==0.6.1
+pyasn1_modules==0.4.1
+pydantic==2.10.6
+pydantic-ai==0.0.35
+pydantic-ai-slim==0.0.35
+pydantic-graph==0.0.35
+pydantic_core==2.27.2
+pydeck==0.9.1
+Pygments==2.19.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytz==2024.2
+PyYAML==6.0.2
+qdrant-client==1.13.3
+realtime==2.4.1
+referencing==0.36.2
+requests==2.32.3
+rich==13.9.4
+rpds-py==0.23.1
+rsa==4.9
+setuptools==75.8.2
+six==1.17.0
+smmap==5.0.2
+sniffio==1.3.1
+SQLAlchemy==2.0.38
+starlette==0.46.0
+storage3==0.11.3
+streamlit==1.43.0
+StrEnum==0.4.15
+supabase==2.13.0
+supafunc==0.9.3
+tenacity==9.0.0
+tokenizers==0.21.0
+toml==0.10.2
+tornado==6.4.2
+tqdm==4.67.1
+types-requests==2.32.0.20250306
+typing-inspect==0.9.0
+typing-inspection==0.4.0
+typing_extensions==4.12.2
+tzdata==2025.1
+urllib3==2.3.0
+uvicorn==0.34.0
+vecs==0.4.5
+watchdog==6.0.0
+wcwidth==0.2.13
+websockets==14.2
+wrapt==1.17.2
+yarl==1.18.3
+zipp==3.21.0
+</file>
+
+</files>

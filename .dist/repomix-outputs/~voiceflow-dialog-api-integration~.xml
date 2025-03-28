@@ -1,0 +1,628 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.dockerignore
+.env.example
+Dockerfile
+README.md
+requirements.txt
+voiceflow_integration.py
+VoiceflowFrontendComponent.tsx
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".dockerignore">
+__pycache__
+.env
+venv
+</file>
+
+<file path=".env.example">
+# For the Supabase version (sample_supabase_agent.py), set your Supabase URL and Service Key.
+# Get your SUPABASE_URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+
+# API key for the Voiceflow agent
+# Get this from: https://creator.voiceflow.com/project/[your agent's project ID]/integration/api
+VOICEFLOW_AGENT_API_KEY=
+</file>
+
+<file path="Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the Voiceflow integration API
+CMD ["sh", "-c", "uvicorn voiceflow_integration:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="README.md">
+# Voiceflow Dialog API Integration
+
+Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
+
+> For detailed information about the Voiceflow Dialog API and how to best utilize it with your Voiceflow agents, refer to the [official Voiceflow Dialog API documentation](https://docs.voiceflow.com/reference/overview).
+
+This integration provides seamless connectivity between Voiceflow agents and the autogen_studio. The key feature of this integration is its zero-configuration approach - **once you build an agent in Voiceflow, it's immediately ready to use in the autogen_studio without any additional setup or customization**.
+
+This API endpoint demonstrates the implementation details of how Voiceflow agents are integrated with the autogen_studio. While you don't need to modify this code to use your Voiceflow agents, understanding how it works can be valuable for advanced use cases.
+
+## Overview
+
+This integration enables:
+- Instant deployment of Voiceflow agents to autogen_studio
+- Real-time conversation handling through Voiceflow's Dialog API
+- Automatic message history tracking
+- Support for rich responses (text, buttons, carousels - future enhancement)
+- Secure API authentication
+- Session management for maintaining conversation context
+
+## Prerequisites
+
+- Python 3.11 or higher
+- pip (Python package manager)
+- Supabase account (for conversation storage)
+- Voiceflow account with an API key
+- Basic understanding of:
+  - FastAPI and async Python
+  - RESTful APIs
+  - Voiceflow Dialog API
+
+## Core Components
+
+### 1. FastAPI Application (`voiceflow_integration.py`)
+
+The integration is built using FastAPI, providing:
+
+- **Voiceflow Integration**
+  - Dialog API communication
+  - Session state management
+  - Rich response handling
+
+- **Authentication**
+  - Bearer token validation
+  - Secure endpoint protection
+  - API key management
+
+- **Database Integration**
+  - Supabase connection for message storage
+  - Conversation history tracking
+  - Session management
+
+### 2. Data Models
+
+#### Request Model
+```python
+class AgentRequest(BaseModel):
+    query: str        # The user's input text or JSON action
+    user_id: str      # Unique identifier for the user
+    request_id: str   # Unique identifier for this request
+    session_id: str   # Current conversation session ID
+```
+
+#### Response Model
+```python
+class AgentResponse(BaseModel):
+    success: bool     # Indicates if the request was processed successfully
+```
+
+### 3. Database Schema
+
+The integration uses Supabase tables with the following structure:
+
+#### Messages Table
+```sql
+messages (
+    id: uuid primary key
+    created_at: timestamp with time zone
+    session_id: text
+    message: jsonb {
+        type: string       # 'human' or 'assistant'
+        content: string    # The message content
+        data: jsonb       # Voiceflow response data
+    }
+)
+```
+
+## Frontend Integration
+
+The `VoiceflowFrontendComponent.tsx` demonstrates how Voiceflow traces from the Dialog API are integrated with the autogen_studio frontend. This component serves as an example of creating custom frontend components to display rich responses from your agent using the `data` field of the AI response instead of raw text output.
+
+### Key Features
+- Handles various Voiceflow trace types (text, choice, knowledgeBase)
+- Renders interactive buttons for choice responses
+- Processes structured message data from Voiceflow's Dialog API
+- Maintains conversation context through session management
+
+### Example Usage
+```typescript
+interface VoiceflowTrace {
+  type: string;
+  payload: {
+    message?: string;
+    slate?: {
+      content: Array<{
+        children: Array<{
+          text: string;
+        }>;
+      }>;
+    };
+    buttons?: VoiceflowButton[];
+  };
+}
+
+// Component renders different UI elements based on trace type
+const renderTrace = (trace: VoiceflowTrace) => {
+  switch (trace.type) {
+    case 'text':
+      return <p>{trace.payload.message}</p>;
+    case 'choice':
+      return <ButtonGroup buttons={trace.payload.buttons} />;
+    // ... handle other trace types
+  }
+};
+```
+
+## Setup
+
+1. **Environment Variables**
+   Create a `.env` file with:
+   ```
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_KEY=your_supabase_key
+   API_BEARER_TOKEN=your_api_token
+   VOICEFLOW_AGENT_API_KEY=your_voiceflow_api_key
+   ```
+
+2. **Local Development**
+   ```bash
+   # Install dependencies
+   pip install -r requirements.txt
+
+   # Run the server
+   python voiceflow_integration.py
+   ```
+
+3. **Docker Deployment**
+   ```bash
+   # Build the container
+   docker build -t voiceflow-integration .
+
+   # Run the container
+   docker run -d --name voiceflow-integration -p 8001:8001 --env-file .env voiceflow-integration
+   ```
+
+## Using Your Voiceflow Agent
+
+1. Create and publish your agent in Voiceflow
+2. Copy your Dialog API key from Voiceflow
+3. Add the API key to your environment variables
+4. Your agent is now ready to use in the autogen_studio!
+
+## API Endpoints
+
+### POST /api/sample-voiceflow-agent
+Handles all communication between autogen_studio and your Voiceflow agent.
+
+**Request:**
+```json
+{
+    "query": "Hello!",
+    "user_id": "user123",
+    "request_id": "req123",
+    "session_id": "sess123"
+}
+```
+
+**Response:**
+```json
+{
+    "success": true
+}
+```
+
+## Contributing
+
+This agent is part of the oTTomator agents collection. For contributions or issues, please refer to the main repository guidelines.
+</file>
+
+<file path="requirements.txt">
+fastapi
+uvicorn
+pydantic
+supabase
+requests
+python-dotenv
+asyncpg
+</file>
+
+<file path="voiceflow_integration.py">
+from typing import List, Optional, Dict, Any, Union
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import requests
+import sys
+import os
+import json
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+def interact_with_voiceflow(action: dict, session_id: str) -> dict:
+    """
+    Send an interaction request to Voiceflow Dialog API.
+    NOTE: Right now this only supports text responses, but in
+    the future it will support buttons, carousels, etc.
+    That is why the payload can also be a dict and the action_type is dynamic.
+    
+    Args:
+        action (dict): Type of action and payload to send to the Voiceflow Dialog API
+        session_id (str): Session ID for the user
+        
+    Returns:
+        dict: JSON response from the API
+        
+    Raises:
+        requests.exceptions.RequestException: If the request fails
+        KeyError: If the API key environment variable is not set
+    """
+    
+    # Get API key from environment variable
+    api_key = os.getenv('VOICEFLOW_AGENT_API_KEY')
+    if not api_key:
+        raise KeyError("VOICEFLOW_AGENT_API_KEY environment variable not set")
+    
+    # Construct the URL with the session ID
+    base_url = "https://general-runtime.voiceflow.com/state/user"
+    url = f"{base_url}/{session_id}/interact"
+    
+    # Prepare the request headers
+    headers = {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'Authorization': api_key
+    }
+    
+    # Prepare the request body
+    body = {
+        "action": action,
+        "config": {
+            "tts": False,
+            "stripSSML": True,
+            "stopAll": False,
+            "excludeTypes": [
+                "block",
+                "debug",
+                "flow"
+            ]
+        }
+    }
+    
+    # Make the POST request
+    response = requests.post(
+        url=f"{url}?logs=off",
+        headers=headers,
+        json=body
+    )
+    
+    # Raise an exception for bad status codes
+    response.raise_for_status()
+    
+    # Return the JSON response
+    return response.json()        
+
+@app.post("/api/sample-voiceflow-agent", response_model=AgentResponse)
+async def sample_voiceflow_agent(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Process the query - it could be either plain text or JSON
+        # Plain text is for base responses to the agent
+        # JSON is for when buttons are selected for the Voiceflow agent
+        user_message = request.query
+        action = {"type": "text", "payload": user_message}
+        
+        if user_message.startswith("```json"):
+            try:
+                # Remove the ```json prefix and parse
+                json_str = user_message.replace("```json", "").strip()
+                parsed_data = json.loads(json_str)
+                
+                # Extract the text for storing and the request data for action
+                user_message = parsed_data.get("text", "")
+                action = parsed_data.get("data", {}).get("request", {}) or parsed_data.get("data", {}).get("action", {})
+            except json.JSONDecodeError as e:
+                print(e)
+                # If JSON parsing fails, treat it as regular text
+                pass
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=user_message
+        )
+
+        # Call the Voicflow Dialog API with the appropriate action
+        agent_response = interact_with_voiceflow(
+            action=action,
+            session_id=request.session_id
+        )
+
+        # Store agent's response
+        # If you need to send a part of the message outside of the Voiceflow agent's response,
+        # do that in the content field. Otherwise the entire response is in the data field.
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="",
+            data=agent_response
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Feel free to change the port here if you need
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path="VoiceflowFrontendComponent.tsx">
+"use client";
+
+import React from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+
+export interface VoiceflowButton {
+  name: string;
+  request: {
+    type: string;
+    payload: {
+      label: string;
+      actions: any[];
+    };
+  };
+}
+
+export interface VoiceflowTrace {
+  type: string;
+  payload: {
+    message?: string;
+    slate?: {
+      content: Array<{
+        children: Array<{
+          text: string;
+        }>;
+      }>;
+    };
+    buttons?: VoiceflowButton[];
+  };
+}
+
+export interface VoiceflowAgentProps {
+  data: VoiceflowTrace[];
+  handleSendMessage: (message?: string, messageData?: any) => Promise<void>;
+}
+
+export const VoiceflowAgent = React.memo(function VoiceflowAgent({ data, handleSendMessage }: VoiceflowAgentProps) {
+  if (!data || data.length === 0) {
+    return (
+      <p className="text-muted-foreground">
+        Error getting response from agent...
+      </p>
+    );
+  }
+
+  const handleButtonClick = async (button: VoiceflowButton) => {
+    const messageData = {
+      text: button.name,
+      data: {
+        request: {
+          type: button.request.type,
+          payload: {
+            label: button.request.payload.label
+          }
+        }
+      }
+    };
+    await handleSendMessage(button.name, `\`\`\`json${JSON.stringify(messageData)}`);
+  };
+
+  const renderTrace = (trace: VoiceflowTrace) => {
+    switch (trace.type) {
+      case 'path':
+        return null;
+      case 'text':
+        const message = trace.payload.message || 
+          trace.payload.slate?.content[0]?.children[0]?.text || 
+          'Empty message';
+        return (
+          <p className="text-foreground">
+            {message}
+          </p>
+        );
+      case 'choice':
+        if (!trace.payload.buttons?.length) return null;
+        return (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {trace.payload.buttons.map((button, index) => (
+              <Button
+                key={index}
+                variant="secondary"
+                onClick={() => handleButtonClick(button)}
+                className="text-sm"
+              >
+                {button.name}
+              </Button>
+            ))}
+          </div>
+        );
+      case 'knowledgeBase':
+        return (
+          <p className="text-muted-foreground italic">
+            Searched Knowledgebase
+          </p>
+        );
+      default:
+        return (
+          <p className="text-muted-foreground italic">
+            Taking custom action: {trace.type}
+          </p>
+        );
+    }
+  };
+
+  return (
+    <Card className="p-4 my-4 space-y-2 bg-card">
+      {data.map((trace, index) => (
+        <React.Fragment key={index}>
+          {renderTrace(trace)}
+        </React.Fragment>
+      ))}
+    </Card>
+  );
+});
+</file>
+
+</files>

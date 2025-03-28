@@ -1,0 +1,902 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+studio-integration-version/
+  .dockerignore
+  .env.example
+  Dockerfile
+  web_search_agent.py
+  web_search_endpoint.py
+.env.example
+README.md
+requirements.txt
+streamlit_ui.py
+web_search_agent_streamlit.py
+web_search_agent.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="studio-integration-version/.dockerignore">
+__pycache__
+venv
+</file>
+
+<file path="studio-integration-version/.env.example">
+# Get your SUPABASE URL from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+SUPABASE_URL=
+
+# Get your SUPABASE_SERVICE_KEY from the API section of your Supabase project settings -
+# https://supabase.com/dashboard/project/<your project ID>/settings/api
+# On this page it is called the service_role secret.
+SUPABASE_SERVICE_KEY=
+
+# Set this bearer token to whatever you want. This will be changed once the agent is hosted for you on the Studio!
+API_BEARER_TOKEN=
+
+# Get your Open AI API Key by following these instructions -
+# https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# You only need this environment variable set if you are using GPT (and not Ollama)
+OPENAI_API_KEY=
+
+# The LLM you want to use. If this is set to any GPT model, it will use the OpenAI API.
+# Otherwise it will assume you are using Ollama and will use the Ollama API.
+LLM_MODEL=
+
+# Get your Brave API key by going to the following link after signing up for Brave:
+# https://api.search.brave.com/app/keys
+BRAVE_API_KEY=
+</file>
+
+<file path="studio-integration-version/Dockerfile">
+FROM ottomator/base-python:latest
+
+# Build argument for port with default value
+ARG PORT=8001
+ENV PORT=${PORT}
+
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Install the Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port from build argument
+EXPOSE ${PORT}
+
+# Command to run the application
+CMD ["sh", "-c", "uvicorn web_search_endpoint:app --host 0.0.0.0 --port ${PORT}"]
+</file>
+
+<file path="studio-integration-version/web_search_agent.py">
+from __future__ import annotations as _annotations
+
+import asyncio
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+import logfire
+from devtools import debug
+from httpx import AsyncClient
+from dotenv import load_dotenv
+
+from supabase import Client
+from openai import AsyncOpenAI
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai import Agent, ModelRetry, RunContext
+
+load_dotenv()
+llm = os.getenv('LLM_MODEL', 'gpt-4o')
+
+client = AsyncOpenAI(
+    # base_url = 'http://localhost:11434/v1',
+    # api_key='ollama'
+)
+
+model = OpenAIModel(llm) if llm.lower().startswith("gpt") else OpenAIModel(llm, openai_client=client)
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+logfire.configure(send_to_logfire='if-token-present')
+
+
+@dataclass
+class WebResearcherDeps:
+    client: AsyncClient
+    supabase: Client
+    session_id: str
+    brave_api_key: str | None
+
+
+web_search_agent = Agent(
+    model,
+    system_prompt=f'You are an expert at researching the web to answer user questions. The current date is: {datetime.now().strftime("%Y-%m-%d")}',
+    deps_type=WebResearcherDeps,
+    retries=2
+)
+
+
+@web_search_agent.tool
+async def search_web(
+    ctx: RunContext[WebResearcherDeps], web_query: str
+) -> str:
+    """Search the web given a query defined to answer the user's question.
+
+    Args:
+        ctx: The context.
+        web_query: The query for the web search.
+
+    Returns:
+        str: The search results as a formatted string.
+    """
+    if ctx.deps.brave_api_key is None:
+        return "This is a test web search result. Please provide a Brave API key to get real search results."
+
+    headers = {
+        'X-Subscription-Token': ctx.deps.brave_api_key,
+        'Accept': 'application/json',
+    }
+    
+    with logfire.span('calling Brave search API', query=web_query) as span:
+        ctx.deps.supabase.table("messages").insert({
+            "session_id": ctx.deps.session_id,
+            "message": {
+                "type": "ai",
+                "content": f"Researching web with query: {web_query}"
+            }
+        }).execute()
+
+        r = await ctx.deps.client.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            params={
+                'q': web_query,
+                'count': 5,
+                'text_decorations': True,
+                'search_lang': 'en'
+            },
+            headers=headers
+        )
+        r.raise_for_status()
+        data = r.json()
+        span.set_attribute('response', data)
+
+    results = []
+    
+    # Add web results in a nice formatted way
+    web_results = data.get('web', {}).get('results', [])
+    for item in web_results[:3]:
+        title = item.get('title', '')
+        description = item.get('description', '')
+        url = item.get('url', '')
+        if title and description:
+            results.append(f"Title: {title}\nSummary: {description}\nSource: {url}\n")
+
+    return "\n".join(results) if results else "No results found for the query."
+
+
+async def main():
+    async with AsyncClient() as client:
+        brave_api_key = os.getenv('BRAVE_API_KEY', None)
+        deps = WebResearcherDeps(client=client, brave_api_key=brave_api_key)
+
+        result = await web_search_agent.run(
+            'Give me some articles talking about the new release of React 19.', deps=deps
+        )
+        
+        debug(result)
+        print('Response:', result.data)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+</file>
+
+<file path="studio-integration-version/web_search_endpoint.py">
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from pathlib import Path
+import httpx
+import sys
+import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+from web_search_agent import web_search_agent, WebResearcherDeps
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastAPI app
+app = FastAPI()
+security = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+# Request/Response Models
+class AgentRequest(BaseModel):
+    query: str
+    user_id: str
+    request_id: str
+    session_id: str
+
+class AgentResponse(BaseModel):
+    success: bool
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> bool:
+    """Verify the bearer token against environment variable."""
+    expected_token = os.getenv("API_BEARER_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=500,
+            detail="API_BEARER_TOKEN environment variable not set"
+        )
+    if credentials.credentials != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token"
+        )
+    return True    
+
+async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent conversation history for a session."""
+    try:
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+
+async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+    """Store a message in the Supabase messages table."""
+    message_obj = {
+        "type": message_type,
+        "content": content
+    }
+    if data:
+        message_obj["data"] = data
+
+    try:
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
+
+@app.post("/api/pydantic-search-agent", response_model=AgentResponse)
+async def web_search(
+    request: AgentRequest,
+    authenticated: bool = Depends(verify_token)
+):
+    try:
+        # Fetch conversation history
+        conversation_history = await fetch_conversation_history(request.session_id)
+        
+        # Convert conversation history to format expected by agent
+        messages = []
+        for msg in conversation_history:
+            msg_data = msg["message"]
+            msg_type = msg_data["type"]
+            msg_content = msg_data["content"]
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=msg_content)])
+            messages.append(msg)
+
+        # Store user's query
+        await store_message(
+            session_id=request.session_id,
+            message_type="human",
+            content=request.query
+        )            
+
+        # Initialize agent dependencies
+        async with httpx.AsyncClient() as client:
+            deps = WebResearcherDeps(
+                client=client,
+                supabase=supabase,
+                session_id=request.session_id,
+                brave_api_key=os.getenv("BRAVE_API_KEY")
+            )
+
+            # Run the agent with conversation history
+            result = await web_search_agent.run(
+                request.query,
+                message_history=messages,
+                deps=deps
+            )
+
+        # Store agent's response
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content=result.data,
+            data={"request_id": request.request_id}
+        )
+
+        return AgentResponse(success=True)
+
+    except Exception as e:
+        print(f"Error processing agent request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+</file>
+
+<file path=".env.example">
+# Get your Open AI API Key by following these instructions -
+# https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
+# You only need this environment variable set if you are using GPT (and not Ollama)
+OPENAI_API_KEY=
+
+# The LLM you want to use. If this is set to any GPT model, it will use the OpenAI API.
+# Otherwise it will assume you are using Ollama and will use the Ollama API.
+LLM_MODEL=
+
+# Get your Brave API key by going to the following link after signing up for Brave:
+# https://api.search.brave.com/app/keys
+BRAVE_API_KEY=
+</file>
+
+<file path="README.md">
+# Pydantic AI: Web Search Agent with Brave API
+
+An advanced web search agent using Pydantic AI and the Brave Search API, with both a command-line interface and a Streamlit web interface. The agent can be configured to use either OpenAI's GPT models or Ollama's local models. On the autogen_studio, this agent is using gpt-4o-mini.
+
+What makes this an advanced web search agent is that it uses the Brave API to summarize a collection of articles found from the search query to create a concise yet comprehensive
+paragraph of information for the LLM to answer the user's question.
+
+### [Check out Cole Medin's YouTube video on this agent!](https://youtu.be/pC17ge_2n0Q)
+
+## Project Structure
+
+This repository contains three versions of the agent:
+1. Command Line Interface (`web_search_agent.py`)
+2. Streamlit Web Interface (`streamlit_ui.py`)
+3. autogen_studio Integration (`studio-integration-version/`)
+
+The `studio-integration-version` folder contains the exact code used to integrate this agent into the autogen_studio. This includes:
+- API endpoint setup
+- Database integration
+- Authentication handling
+- Message history management
+
+If you're looking to integrate your own agent into the autogen_studio, this version serves as a reference implementation.
+
+## Prerequisites
+
+- Python 3.11+
+- OpenAI API key (if using GPT models)
+- [Ollama](https://ollama.ai/) (optional, for local LLM usage)
+- Brave Search API key
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/dislovemartin/SolnAI-agents.git
+cd SolnAI-agents/pydantic-ai-advanced-researcher
+```
+
+2. Install dependencies (I recommend to do this in a Python virtual environment):
+```bash
+pip install -r requirements.txt
+```
+
+This will install Pydantic AI, Streamlit, and all of their dependencies.
+
+3. Set up environment variables:
+   - Rename `.env.example` to `.env`.
+   - Edit `.env` with your API keys and preferences:
+   ```env
+   OPENAI_API_KEY=your_openai_api_key  # Only needed if using GPT models
+   BRAVE_API_KEY=your_brave_api_key
+   LLM_MODEL=your_chosen_model  # e.g., gpt-4, qwen2.5:32b
+   ```
+
+## Usage
+
+### Command Line Interface
+
+The command-line version can work with both GPT and Ollama models:
+
+```bash
+python web_search_agent.py
+```
+
+The script determines whether to use OpenAI or Ollama based on the `LLM_MODEL` environment variable (whether it starts with 'gpt' or not).
+
+### Streamlit Interface
+
+The Streamlit version is created to provide a UI with text streaming from the LLM and chat history. Text streaming doesn't work with Ollama, so this Streamlit example will just use GPT. Make sure your have your OpenAI API key set. This can also be adjusted to use standard non-streaming like `web_search_agent.py` if you want to use Ollama.
+
+1. Set your OpenAI API key in the `.env` file.
+2. Start the Streamlit app:
+```bash
+streamlit run streamlit_ui.py
+```
+3. The Streamlit app will open in your browser.
+
+## Configuration
+
+### LLM Models
+
+You can choose between different LLM models by setting the `LLM_MODEL` environment variable:
+
+- For OpenAI GPT (example model, this can be any OpenAI model):
+  ```env
+  LLM_MODEL=gpt-4o
+  ```
+
+- For Ollama (example model, this can be any Ollama model you have downloaded):
+  ```env
+  LLM_MODEL=qwen2.5:32b
+  ```
+
+### API Keys
+
+- **Brave Search API**: Get your API key from [Brave Search API](https://brave.com/search/api/)
+- **OpenAI API** (optional): Get your API key from [OpenAI](https://platform.openai.com/api-keys)
+
+## Troubleshooting
+
+1. **Ollama Connection Issues**:
+   - Ensure Ollama is running: `ollama serve`
+   - Check if the model is downloaded: `ollama pull your_model_name`
+
+2. **API Key Issues**:
+   - Verify your API keys are correctly set in the `.env` file
+   - Check if your Brave API key has sufficient credits
+
+3. **Model Loading Issues**:
+   - For Ollama, ensure you have sufficient RAM for your chosen model
+   - Try using a smaller model if you experience memory issues
+</file>
+
+<file path="requirements.txt">
+altair==5.5.0
+annotated-types==0.7.0
+anyio==4.7.0
+asttokens==2.4.1
+attrs==24.2.0
+blinker==1.9.0
+cachetools==5.5.0
+certifi==2024.8.30
+charset-normalizer==3.4.0
+click==8.1.7
+colorama==0.4.6
+Deprecated==1.2.15
+devtools==0.12.2
+distro==1.9.0
+eval_type_backport==0.2.0
+executing==2.1.0
+gitdb==4.0.11
+GitPython==3.1.43
+google-auth==2.36.0
+googleapis-common-protos==1.66.0
+griffe==1.5.1
+groq==0.13.0
+h11==0.14.0
+httpcore==1.0.7
+httpx==0.28.0
+idna==3.10
+importlib_metadata==8.5.0
+Jinja2==3.1.4
+jiter==0.8.0
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+logfire==2.6.2
+logfire-api==2.6.2
+markdown-it-py==3.0.0
+MarkupSafe==3.0.2
+mdurl==0.1.2
+narwhals==1.15.2
+numpy==2.1.3
+openai==1.57.0
+opentelemetry-api==1.28.2
+opentelemetry-exporter-otlp-proto-common==1.28.2
+opentelemetry-exporter-otlp-proto-http==1.28.2
+opentelemetry-instrumentation==0.49b2
+opentelemetry-proto==1.28.2
+opentelemetry-sdk==1.28.2
+opentelemetry-semantic-conventions==0.49b2
+packaging==24.2
+pandas==2.2.3
+pillow==11.0.0
+protobuf==5.29.1
+pyarrow==18.1.0
+pyasn1==0.6.1
+pyasn1_modules==0.4.1
+pydantic==2.10.3
+pydantic-ai==0.0.10
+pydantic-ai-slim==0.0.10
+pydantic_core==2.27.1
+pydeck==0.9.1
+Pygments==2.18.0
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytz==2024.2
+referencing==0.35.1
+requests==2.32.3
+rich==13.9.4
+rpds-py==0.22.3
+rsa==4.9
+six==1.17.0
+smmap==5.0.1
+sniffio==1.3.1
+streamlit==1.40.2
+tenacity==9.0.0
+toml==0.10.2
+tornado==6.4.2
+tqdm==4.67.1
+typing_extensions==4.12.2
+tzdata==2024.2
+urllib3==2.2.3
+watchdog==6.0.0
+wrapt==1.17.0
+zipp==3.21.0
+</file>
+
+<file path="streamlit_ui.py">
+from dotenv import load_dotenv
+from httpx import AsyncClient
+from datetime import datetime
+import streamlit as st
+import asyncio
+import json
+import os
+
+from openai import AsyncOpenAI, OpenAI
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.messages import ModelTextResponse, UserPrompt
+
+from web_search_agent import web_search_agent, Deps
+
+load_dotenv()
+llm = os.getenv('LLM_MODEL', 'gpt-4o')
+
+# For now it appears Ollama doesn't support streaming with Pydantic AI so this is disabled
+# If you want to use Ollama, you'll need to update this to be sync like web_search_agent.py
+
+# client = AsyncOpenAI(
+#     base_url = 'http://localhost:11434/v1',
+#     api_key='ollama'
+# )
+
+# model = OpenAIModel('gpt-4o') if llm.lower().startswith("gpt") else OpenAIModel('qwen2.5-ottodev:32b', openai_client=client)
+
+model = OpenAIModel('gpt-4o')
+
+async def prompt_ai(messages):
+    async with AsyncClient() as client:
+        brave_api_key = os.getenv('BRAVE_API_KEY', None)
+        deps = Deps(client=client, brave_api_key=brave_api_key)
+
+        async with web_search_agent.run_stream(
+            messages[-1].content, deps=deps, message_history=messages[:-1]
+        ) as result:
+            async for message in result.stream_text(delta=True):  
+                yield message          
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~ Main Function with UI Creation ~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async def main():
+    st.title("Pydantic AI Chatbot")
+
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []    
+
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        role = message.role
+        if role in ["user", "model-text-response"]:
+            with st.chat_message("human" if role == "user" else "ai"):
+                st.markdown(message.content)        
+
+    # React to user input
+    if prompt := st.chat_input("What would you like research today?"):
+        # Display user message in chat message container
+        st.chat_message("user").markdown(prompt)
+        # Add user message to chat history
+        st.session_state.messages.append(UserPrompt(content=prompt))
+
+        # Display assistant response in chat message container
+        response_content = ""
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()  # Placeholder for updating the message
+            # Run the async generator to fetch responses
+            async for chunk in prompt_ai(st.session_state.messages):
+                response_content += chunk
+                # Update the placeholder with the current response content
+                message_placeholder.markdown(response_content)
+        
+        st.session_state.messages.append(ModelTextResponse(content=response_content))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="web_search_agent_streamlit.py">
+from __future__ import annotations as _annotations
+
+import asyncio
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+import logfire
+from devtools import debug
+
+from pydantic_ai import Agent, ModelRetry, RunContext
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+logfire.configure(send_to_logfire='if-token-present')
+
+@dataclass
+class Deps:
+    client: AsyncClient
+    brave_api_key: str | None
+
+
+web_search_agent = Agent(
+    model,
+    system_prompt=f'You are an expert at researching the web to answer user questions. The current date is: {datetime.now().strftime("%Y-%m-%d")}',
+    deps_type=Deps,
+    retries=2
+)
+
+
+@web_search_agent.tool
+async def search_web(
+    ctx: RunContext[Deps], web_query: str
+) -> str:
+    """Search the web given a query defined to answer the user's question.
+
+    Args:
+        ctx: The context.
+        web_query: The query for the web search.
+
+    Returns:
+        str: The search results as a formatted string.
+    """
+    if ctx.deps.brave_api_key is None:
+        return "This is a test web search result. Please provide a Brave API key to get real search results."
+
+    headers = {
+        'X-Subscription-Token': ctx.deps.brave_api_key,
+        'Accept': 'application/json',
+    }
+    
+    with logfire.span('calling Brave search API', query=web_query) as span:
+        r = await ctx.deps.client.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            params={
+                'q': web_query,
+                'count': 5,
+                'text_decorations': True,
+                'search_lang': 'en'
+            },
+            headers=headers
+        )
+        r.raise_for_status()
+        data = r.json()
+        span.set_attribute('response', data)
+
+    results = []
+    
+    # Add web results in a nice formatted way
+    web_results = data.get('web', {}).get('results', [])
+    for item in web_results[:3]:
+        title = item.get('title', '')
+        description = item.get('description', '')
+        url = item.get('url', '')
+        if title and description:
+            results.append(f"Title: {title}\nSummary: {description}\nSource: {url}\n")
+
+    return "\n".join(results) if results else "No results found for the query."
+</file>
+
+<file path="web_search_agent.py">
+from __future__ import annotations as _annotations
+
+import asyncio
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+import logfire
+from devtools import debug
+from httpx import AsyncClient
+from dotenv import load_dotenv
+
+from openai import AsyncOpenAI
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai import Agent, ModelRetry, RunContext
+
+load_dotenv()
+llm = os.getenv('LLM_MODEL', 'gpt-4o')
+
+client = AsyncOpenAI(
+    base_url = 'http://localhost:11434/v1',
+    api_key='ollama'
+)
+
+model = OpenAIModel(llm) if llm.lower().startswith("gpt") else OpenAIModel(llm, openai_client=client)
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+logfire.configure(send_to_logfire='if-token-present')
+
+
+@dataclass
+class Deps:
+    client: AsyncClient
+    brave_api_key: str | None
+
+
+web_search_agent = Agent(
+    model,
+    system_prompt=f'You are an expert at researching the web to answer user questions. The current date is: {datetime.now().strftime("%Y-%m-%d")}',
+    deps_type=Deps,
+    retries=2
+)
+
+
+@web_search_agent.tool
+async def search_web(
+    ctx: RunContext[Deps], web_query: str
+) -> str:
+    """Search the web given a query defined to answer the user's question.
+
+    Args:
+        ctx: The context.
+        web_query: The query for the web search.
+
+    Returns:
+        str: The search results as a formatted string.
+    """
+    if ctx.deps.brave_api_key is None:
+        return "This is a test web search result. Please provide a Brave API key to get real search results."
+
+    headers = {
+        'X-Subscription-Token': ctx.deps.brave_api_key,
+        'Accept': 'application/json',
+    }
+    
+    with logfire.span('calling Brave search API', query=web_query) as span:
+        r = await ctx.deps.client.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            params={
+                'q': web_query,
+                'count': 5,
+                'text_decorations': True,
+                'search_lang': 'en'
+            },
+            headers=headers
+        )
+        r.raise_for_status()
+        data = r.json()
+        span.set_attribute('response', data)
+
+    results = []
+    
+    # Add web results in a nice formatted way
+    web_results = data.get('web', {}).get('results', [])
+    for item in web_results[:3]:
+        title = item.get('title', '')
+        description = item.get('description', '')
+        url = item.get('url', '')
+        if title and description:
+            results.append(f"Title: {title}\nSummary: {description}\nSource: {url}\n")
+
+    return "\n".join(results) if results else "No results found for the query."
+
+
+async def main():
+    async with AsyncClient() as client:
+        brave_api_key = os.getenv('BRAVE_API_KEY', None)
+        deps = Deps(client=client, brave_api_key=brave_api_key)
+
+        result = await web_search_agent.run(
+            'Give me some articles talking about the new release of React 19.', deps=deps
+        )
+        
+        debug(result)
+        print('Response:', result.data)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+</file>
+
+</files>
