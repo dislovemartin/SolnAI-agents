@@ -1,0 +1,106 @@
+version: "3.8"
+
+services:
+  base-python:
+    build:
+      context: ./base_python_docker
+      dockerfile: Dockerfile
+    image: solnai/base-python:latest
+    runtime: nvidia
+
+  archon:
+    build:
+      context: ./Archon
+      dockerfile: Dockerfile
+    image: solnai/archon:latest
+    env_file:
+      - ./Archon/.env
+    ports:
+      - "8001:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - agent_network
+    runtime: nvidia
+
+  tinydm-agent:
+    build:
+      context: ./TinyDM-agent
+      dockerfile: Dockerfile
+    image: solnai/tinydm-agent:latest
+    env_file:
+      - ./TinyDM-agent/.env
+    ports:
+      - "8002:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - agent_network
+    runtime: nvidia
+
+  ask-reddit-agent:
+    build:
+      context: ./ask-reddit-agent
+      dockerfile: Dockerfile
+    image: solnai/ask-reddit-agent:latest
+    env_file:
+      - ./ask-reddit-agent/.env
+    ports:
+      - "8003:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - agent_network
+    runtime: nvidia
+
+networks:
+  agent_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
